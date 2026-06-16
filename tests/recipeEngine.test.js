@@ -54,3 +54,21 @@ test('fillPath substitutes single-brace {model} and {apiKey}', () => {
   assert.equal(eng.fillPath('/v1/models/{model}:generateContent', { model: 'gemini-x', apiKey: 'k' }), '/v1/models/gemini-x:generateContent');
   assert.equal(eng.fillPath('/x?key={apiKey}', { model: 'm', apiKey: 'sk 1' }), '/x?key=sk%201');
 });
+
+test('getByPath reads dot + bracket paths', () => {
+  assert.equal(eng.getByPath({ choices: [{ message: { content: 'hi' } }] }, 'choices[0].message.content'), 'hi');
+  assert.equal(eng.getByPath({ a: { b: 'c' } }, 'a.b'), 'c');
+  assert.equal(eng.getByPath({}, 'x[0].y'), undefined);
+});
+
+test('readResult handles a plain image base64 path', () => {
+  const data = { data: [{ b64_json: 'QUJD' }] };
+  assert.equal(eng.readResult(data, { resultPath: 'data[0].b64_json' }), 'QUJD');
+});
+
+test('readResult handles wildcard + selectWithField (Gemini)', () => {
+  const data = { candidates: [{ content: { parts: [{ text: 'hi' }, { inlineData: { data: 'IMG', mimeType: 'image/png' } }] } }] };
+  const recipe = { resultPath: 'candidates[0].content.parts[*].inlineData.data', selectWithField: 'inlineData', resultMimePath: 'candidates[0].content.parts[*].inlineData.mimeType' };
+  assert.equal(eng.readResult(data, recipe), 'IMG');
+  assert.equal(eng.readMime(data, recipe), 'image/png');
+});
