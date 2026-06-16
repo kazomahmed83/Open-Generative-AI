@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { generateImage, generateI2I, uploadFile } from "../muapi.js";
+import { generateI2I, uploadFile } from "../muapi.js"; // MuAPI: i2i (optional legacy) + uploads only; t2i is local/API
 import * as localApi from "../local-api.js";
 import {
   t2iModels,
@@ -1096,15 +1096,13 @@ export default function ImageStudio({
               (evt) => setLocalProgress(evt),
             );
           }
-          if (apiModels.length > 0) {
-            // Configured API providers take over the "API" side (text-to-image).
-            return await localApi.generateImage(
-              selectedApiModelId,
-              { prompt: prompt.trim(), aspect_ratio: selectedAr },
-              (evt) => setLocalProgress(evt),
-            );
-          }
           if (imageMode) {
+            // Image-to-image: optional legacy cloud (MuAPI). No local/API i2i yet.
+            if (!apiKey) {
+              throw new Error(
+                "Image-to-image needs a cloud (MuAPI) key — optional/legacy. Turn off Reference image to use local or API text-to-image.",
+              );
+            }
             const genParams = {
               model: selectedModelId,
               images_list: uploadedImageUrls,
@@ -1117,17 +1115,18 @@ export default function ImageStudio({
             }
             if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
             return await generateI2I(apiKey, genParams);
-          } else {
-            const genParams = {
-              model: selectedModelId,
-              prompt: prompt.trim(),
-              aspect_ratio: selectedAr,
-            };
-            if (currentQualityField && selectedQuality) {
-              genParams[currentQualityField] = selectedQuality;
-            }
-            return await generateImage(apiKey, genParams);
           }
+          if (apiModels.length > 0) {
+            // API text-to-image via configured providers (replaces MuAPI t2i).
+            return await localApi.generateImage(
+              selectedApiModelId,
+              { prompt: prompt.trim(), aspect_ratio: selectedAr },
+              (evt) => setLocalProgress(evt),
+            );
+          }
+          throw new Error(
+            "No API provider configured — add one in Settings → API Providers, or switch to Local.",
+          );
         })
       );
 
@@ -1347,63 +1346,22 @@ export default function ImageStudio({
                     </option>
                   ))}
                 </select>
-              ) : apiModels.length > 0 ? (
+              ) : (
+                /* API mode = configured providers only (MuAPI t2i removed) */
                 <select
                   value={selectedApiModelId || ""}
                   onChange={(e) => setSelectedApiModelId(e.target.value)}
                   className="bg-white/5 text-white text-sm rounded-lg px-2 py-1 border border-white/10 outline-none"
                 >
+                  {apiModels.length === 0 && (
+                    <option value="">No API providers — add in Settings</option>
+                  )}
                   {apiModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>
                   ))}
                 </select>
-              ) : (
-                /* Model button (MuAPI) */
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDropdownOpen((o) => (o === "model" ? null : "model"));
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
-                  >
-                    <div className="w-4 h-4 bg-[#22d3ee] rounded flex items-center justify-center">
-                      <span className="text-[9px] font-bold text-black uppercase">G</span>
-                    </div>
-                    <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
-                      {selectedModelName}
-                    </span>
-                    <svg
-                      width="10"
-                      height="10"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      className="opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    >
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
-                  </button>
-
-                  {dropdownOpen === "model" && (
-                    <div
-                      ref={dropdownRef}
-                      onClick={(e) => e.stopPropagation()}
-                      className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-lg p-3 shadow-2xl border border-white/[0.05] w-[calc(100vw-3rem)] max-w-xs"
-                    >
-                      <ModelDropdown
-                        models={currentModels}
-                        selectedModel={selectedModelId}
-                        onSelect={handleModelSelect}
-                        onClose={() => setDropdownOpen(null)}
-                      />
-                    </div>
-                  )}
-                </div>
               )}
 
               {/* Aspect ratio button */}
