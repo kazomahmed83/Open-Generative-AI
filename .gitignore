@@ -34,6 +34,10 @@ out/
 # Local model downloads and inference binaries
 .local-ai/
 
+# Test/verification artifacts (Playwright, screenshots)
+.playwright-mcp/
+*-verified.png
+
 # Misc
 *.pem
 .env
