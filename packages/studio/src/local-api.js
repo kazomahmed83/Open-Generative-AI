@@ -32,7 +32,8 @@ async function streamGenerate(payload, onProgress) {
     for (const part of parts) {
       const line = part.split('\n').find((l) => l.startsWith('data: '));
       if (!line) continue;
-      const obj = JSON.parse(line.slice(6));
+      let obj;
+      try { obj = JSON.parse(line.slice(6)); } catch { continue; }
       if (obj.type === 'progress') onProgress && onProgress(obj);
       if (obj.type === 'result') result = { url: obj.url, seed: obj.seed };
       if (obj.type === 'error') throw new Error(obj.error);

@@ -1120,7 +1120,7 @@ export default function ImageStudio({
           addToHistory(entry);
           onGenerationComplete?.({
             url: res.url,
-            model: selectedModelId,
+            model: useLocalModel ? selectedLocalModelId : selectedModelId,
             prompt: prompt.trim(),
             type: "image",
           });
