@@ -98,3 +98,55 @@ test('buildRequest supports header auth + {model} in path (Gemini) and omits Con
   assert.equal(r2.headers.Accept, 'application/json');
   assert.deepEqual(r2.body, { prompt: 'cat', aspect_ratio: '16:9' });
 });
+
+test('extFromMime / extFromUrl map to file extensions', () => {
+  assert.equal(eng.extFromMime('image/png'), 'png');
+  assert.equal(eng.extFromMime('image/jpeg'), 'jpeg');
+  assert.equal(eng.extFromUrl('https://x/y/pic.webp?sig=1'), 'webp');
+});
+
+test('runRecipe returns text for a chat recipe', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ choices: [{ message: { content: 'hello' } }] }) });
+  try {
+    const recipe = { kind: 'chat', path: '/v1/chat/completions', body: { model: '{{model}}', messages: '{{messages}}' }, resultPath: 'choices[0].message.content', resultType: 'text' };
+    const out = await eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', { prompt: 'hi' });
+    assert.deepEqual(out, { text: 'hello' });
+  } finally { global.fetch = orig; }
+});
+
+test('runRecipe decodes base64 image and uses mime for ext', async () => {
+  const orig = global.fetch;
+  const b64 = Buffer.from('PNGDATA').toString('base64');
+  global.fetch = async () => ({ ok: true, json: async () => ({ data: [{ b64_json: b64 }] }) });
+  try {
+    const recipe = { kind: 'image', path: '/v1/images/generations', body: { prompt: '{{prompt}}' }, resultPath: 'data[0].b64_json', resultType: 'base64' };
+    const out = await eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', { prompt: 'cat' });
+    assert.equal(out.buffer.toString(), 'PNGDATA');
+    assert.equal(out.ext, 'png');
+  } finally { global.fetch = orig; }
+});
+
+test('runRecipe downloads a url-type image result', async () => {
+  const orig = global.fetch;
+  let call = 0;
+  global.fetch = async (u) => {
+    call += 1;
+    if (call === 1) return { ok: true, json: async () => ({ images: [{ url: 'https://cdn/x.png' }] }) };
+    return { ok: true, arrayBuffer: async () => Buffer.from('BYTES') };
+  };
+  try {
+    const recipe = { kind: 'image', path: '/v1/images/generations', body: { prompt: '{{prompt}}' }, resultPath: 'images[0].url', resultType: 'url' };
+    const out = await eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', { prompt: 'cat' });
+    assert.equal(out.buffer.toString(), 'BYTES');
+  } finally { global.fetch = orig; }
+});
+
+test('runRecipe throws a helpful error on non-ok response', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: false, status: 401, text: async () => 'nope' });
+  try {
+    const recipe = { kind: 'chat', path: '/x', body: {}, resultPath: 'a', resultType: 'text' };
+    await assert.rejects(() => eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', {}), /401/);
+  } finally { global.fetch = orig; }
+});
