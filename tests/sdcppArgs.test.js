@@ -37,3 +37,12 @@ test('buildSdCppArgs uses --diffusion-model + --llm/--vae for z-image', () => {
   assert.ok(args.includes('--vae') && args.includes('/m/ae.safetensors'));
   assert.ok(args.includes('--scheduler') && args.includes('discrete'));
 });
+
+test('buildSdCppArgs honors an explicit seed of 0', () => {
+  const args = buildSdCppArgs({
+    model: { filename: 'm.safetensors', type: 'sd1' }, modelsDir: '/m', outPath: '/o.png',
+    params: { prompt: 'x', aspect_ratio: '1:1', seed: 0 },
+  });
+  const i = args.indexOf('--seed');
+  assert.strictEqual(args[i + 1], '0');
+});
