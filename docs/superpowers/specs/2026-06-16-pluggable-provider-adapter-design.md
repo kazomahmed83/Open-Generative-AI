@@ -44,6 +44,7 @@ Recipes are shipped as **built-in presets** and can be **pasted/edited in an Adv
 | `resultType` | image: `"base64"\|"url"\|"binary"`; chat: `"text"` | yes | How to interpret `resultPath`. |
 | `resultMimePath` | string (path expr) | no | Sibling path to a MIME string → file extension (Gemini). |
 | `selectWithField` | string | no | For `[*]` arrays: pick the element that **has** this sub-field (Gemini `inlineData`). |
+| `modelsList` | object | no | Optional model-discovery descriptor powering "Browse models": `{path,itemsPath,idField,nameField?,auth?,freePath?,freeEquals?,kindFromPath?,kindImageWhenContains?}`. See [Model discovery](#model-discovery-browse-models). |
 
 ### Placeholder syntax
 Double-brace tokens `{{name}}` inside string values of `body` and `path`. The engine deep-walks the template:
@@ -70,6 +71,29 @@ Paths are **read-only traversal and never execute code.**
 
 For `bodyType:"multipart"` the engine builds `FormData`, lets the runtime set `Content-Type` with boundary, and emits a dummy part if there is no file part (Stability multipart gotcha).
 
+## Model discovery ("Browse models")
+Most OpenAI-compatible hosts expose a live catalog endpoint (OpenRouter `GET /api/v1/models`; OpenAI/Together/Groq/SiliconFlow `GET /v1/models`). An optional `modelsList` block on a preset describes **where the catalog is and how to read each entry** — same "data, not code" approach as the rest of the adapter:
+
+```jsonc
+"modelsList": {
+  "path": "/api/v1/models",          // appended to baseUrl
+  "auth": false,                      // OpenRouter's list is PUBLIC (no key to browse); others: true
+  "itemsPath": "data",               // where the array of models is
+  "idField": "id",
+  "nameField": "name",               // optional
+  "freePath": "pricing.prompt",      // optional → drives the "Free" badge/filter
+  "freeEquals": "0",                 // free when the freePath value === this
+  "kindFromPath": "architecture.output_modalities", // optional
+  "kindImageWhenContains": "image"   // kind=image if that field contains this, else chat
+}
+```
+
+- **Endpoint:** new `POST /api/local-ai/providers/browse` fetches `{baseUrl}{modelsList.path}` **server-side** (attaching the key only when `auth:true`), normalizes each item to `{ id, name, free, kind }`, and returns the array. Keys never reach the client.
+- **UI:** a **"Browse models"** button opens a searchable list with a **"Free only"** toggle (filters on `free`); checking models appends them to the provider's model list with `kind` auto-set. The list is **live**, so newly released free models appear with no app update.
+- **OpenRouter-rich:** its preset carries the full `modelsList` (pricing → free, modalities → kind) → **one provider unlocks ~all OpenRouter LLMs, filtered to free, browsable without a key.**
+- **Generic-basic:** providers with only `path/itemsPath/idField` return IDs with `free:"unknown"` and `kind` defaulting to the provider's kind — still browsable, just without free/kind metadata.
+- Providers without a `modelsList` simply show no Browse button (hand-type as before).
+
 ## Default recipe + backward compatibility
 A built-in **`openai-compatible` default recipe pair** equals today's behavior:
 ```jsonc
@@ -93,7 +117,7 @@ Each preset = `{ id, name, baseUrl, authStyle, headers?, models:[{id,name,kind}]
 | **Together AI** | `https://api.together.xyz` | image uses `width`/`height` + `response_format:"base64"` → `data[0].b64_json`. Models incl. `black-forest-labs/FLUX.1-schnell-Free`. |
 | **SiliconFlow** | `https://api.siliconflow.cn` | image uses `image_size:"{{size}}"`, result `images[0].url` (`resultType:url`). Models incl. **`nex-agi/Nex-N2-Pro`** (chat, free tier), `Kwai-Kolors/Kolors` (image). |
 | **Groq** | `https://api.groq.com` | chat path override `/openai/v1/chat/completions`. Chat only (free tier). |
-| **OpenRouter** | `https://openrouter.ai` | chat path `/api/v1/chat/completions`; `headers:{HTTP-Referer,X-Title}`. Models incl. **`nex-agi/nex-n2-pro:free`** (zero-cost), `nex-agi/nex-n2-pro`. |
+| **OpenRouter** | `https://openrouter.ai` | chat path `/api/v1/chat/completions`; `headers:{HTTP-Referer,X-Title}`. Models incl. **`nex-agi/nex-n2-pro:free`** (zero-cost), `nex-agi/nex-n2-pro`. Carries a rich `modelsList` (public catalog `/api/v1/models` → Free filter + image/chat auto-detect). |
 
 **Free / zero-cost options (user priority):** Nex-N2-Pro is usable for **free** via OpenRouter (`nex-agi/nex-n2-pro:free`) and SiliconFlow's free tier; Groq, Together (`FLUX.1-schnell-Free`), and Gemini also have free tiers. These presets exist specifically so the user can run strong models at no cost.
 | **DeepSeek** | `https://api.deepseek.com` | chat path `/chat/completions`. Models `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-chat`. |
@@ -105,6 +129,7 @@ The exact recipe JSON for all 9 presets (from the validation pass) is the implem
 
 ## UI changes (`ProvidersPanel`)
 - **Presets dropdown** — "Start from a preset" pre-fills baseUrl + authStyle + headers + the model list (with per-model kind) for any of the 9. Paste key → Save.
+- **Browse models** — for providers with a `modelsList` (OpenRouter especially), a "Browse models" button opens the **live** catalog with search + a **"Free only"** toggle; check models to add them (kind auto-set). OpenRouter's catalog browses without a key.
 - **Per-model Type** — each model line carries its own `kind` (image/chat), so one provider holds both. UI: `model-id | Display Name | image|chat` (the third field is optional and defaults to the provider's existing `kind` field, retained for back-compat with current configs). Parser extends the current `id|name` split.
 - **"Test" button** — calls `POST /api/local-ai/providers/test` which runs the recipe once (tiny prompt for chat; 1 small image for image) server-side and returns ✅ or ❌ with the failure reason. Never exposes the key to the client.
 - **Advanced (collapsible)** — (a) **"Start from <preset>"** clones the closest preset's recipe JSON into an editable textarea; (b) a raw recipe-JSON textarea for full control. Validated on save (well-formed JSON + required fields). This is the Tier-3 escape hatch.
@@ -123,6 +148,7 @@ Image Studio → `localApi.generateImage(apiModelId, params)` → `POST /api/loc
 - `substitute()`: native-type preservation (`"{{messages}}"` → array), embedded stringification, dropped-optional tokens, `{apiKey}` path substitution.
 - `readResult()`: `data[0].b64_json`, `choices[0].message.content`, `images[0].url`, `@binary`, `parts[*]`+`selectWithField`, `resultMimePath`.
 - `buildRequest()` for **all 9 presets**: assert exact URL, headers (incl. auth), bodyType, and serialized body each would send — no live keys needed.
+- `normalizeModelList()`: OpenRouter-shaped catalog → `{id,name,free,kind}` (pricing→free, modalities→kind); generic `{data:[{id}]}` → ids with `free:"unknown"`; missing/odd shapes degrade gracefully.
 - Regression: existing `apiProvider.test.js` / `providerRegistry.test.js` still pass; default recipe reproduces current OpenAI behavior byte-for-byte.
 
 ## Deferred / out of scope (YAGNI — flagged by the validation pass)
@@ -133,7 +159,7 @@ Image Studio → `localApi.generateImage(apiModelId, params)` → `POST /api/loc
 - **OAuth "Connect" (e.g. OpenRouter)** — API-key paste is the universal method now; OAuth convenience later.
 
 ## File plan summary
-- New: `lib/local-runtime/providers/recipe-engine.js`, `lib/local-runtime/providers/presets.js`, `app/api/local-ai/providers/test/route.js`, tests `tests/recipeEngine.test.js`, `tests/providerPresets.test.js`.
+- New: `lib/local-runtime/providers/recipe-engine.js`, `lib/local-runtime/providers/presets.js`, `app/api/local-ai/providers/test/route.js`, `app/api/local-ai/providers/browse/route.js`, tests `tests/recipeEngine.test.js`, `tests/providerPresets.test.js`, `tests/modelsListNormalize.test.js`.
 - Modified: `lib/local-runtime/providers/api.js`, `components/ProvidersPanel.js`, `lib/local-runtime/config.js`, `lib/local-runtime/catalog.js`, `app/api/local-ai/providers/route.js`.
 
 ## Open questions
