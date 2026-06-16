@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ImageStudio, VideoStudio, ClippingStudio, VibeMotionStudio, LipSyncStudio, CinemaStudio, AudioStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, getUserBalance } from 'studio';
+import LocalModelsPanel from './LocalModelsPanel';
 
 const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignAgentStudio), {
   ssr: false,
@@ -67,6 +68,7 @@ export default function StandaloneShell() {
 
   const [balance, setBalance] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const [hasMounted, setHasMounted] = useState(false);
   const [showVadooBanner, setShowVadooBanner] = useState(() => {
@@ -151,6 +153,8 @@ export default function StandaloneShell() {
     setApiKey(key);
     fetchBalance(key);
     document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
+    setShowApiKeyModal(false);
+    setShowSettings(false);
   }, [fetchBalance]);
 
   const handleKeyChange = useCallback(() => {
@@ -234,10 +238,6 @@ export default function StandaloneShell() {
       <div className="animate-spin text-[#22d3ee] text-3xl">◌</div>
     </div>
   );
-
-  if (!apiKey) {
-    return <ApiKeyModal onSave={handleKeySave} />;
-  }
 
   return (
     <div 
@@ -332,10 +332,10 @@ export default function StandaloneShell() {
           {/* Right: Actions */}
           <div className="flex-shrink-0 flex items-center gap-4">
             <div className="flex items-center gap-3 bg-white/5 px-3 py-1.5 rounded-full border border-white/5 transition-colors">
-              <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <div className={`w-2 h-2 rounded-full ${apiKey ? 'bg-green-500 animate-pulse' : 'bg-[#e5ff33]'}`} />
               <div className="flex flex-col">
                 <span className="text-xs font-bold text-white/90">
-                  ${balance !== null ? `${balance}` : '---'}
+                  {apiKey ? `$${balance !== null ? `${balance}` : '---'}` : 'Local'}
                 </span>
               </div>
             </div>
@@ -374,12 +374,18 @@ export default function StandaloneShell() {
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in-up">
-          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-8 w-full max-w-sm shadow-2xl">
+          <div className="bg-[#0a0a0a] border border-white/10 rounded-xl p-8 w-full max-w-3xl max-h-[88vh] overflow-y-auto shadow-2xl">
             <h2 className="text-white font-bold text-lg mb-2">Settings</h2>
             <p className="text-white/40 text-[13px] mb-8">
               Manage your AI studio preferences and authentication.
             </p>
+
+            <div className="mb-8">
+              <LocalModelsPanel />
+            </div>
             
+            {apiKey ? (
+              <>
             <div className="space-y-4 mb-8">
               <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
                 <label className="block text-xs font-bold text-white/30 mb-2">
@@ -396,7 +402,7 @@ export default function StandaloneShell() {
                 onClick={handleKeyChange}
                 className="flex-1 h-10 rounded-md bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-semibold transition-all"
               >
-                Change Key
+                Remove Key
               </button>
               <button
                 onClick={() => setShowSettings(false)}
@@ -405,8 +411,50 @@ export default function StandaloneShell() {
                 Close
               </button>
             </div>
+              </>
+            ) : (
+              <>
+                <div className="space-y-4 mb-8">
+                  <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
+                    <label className="block text-xs font-bold text-white/30 mb-2">
+                      Studio Mode
+                    </label>
+                    <div className="text-[13px] text-white/70 leading-relaxed">
+                      Local/demo mode is active. Add a MuAPI key only when you want to run cloud models.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowSettings(false);
+                      setShowApiKeyModal(true);
+                    }}
+                    className="flex-1 h-10 rounded-md bg-[#22d3ee]/10 text-[#22d3ee] hover:bg-[#22d3ee]/20 text-xs font-semibold transition-all"
+                  >
+                    Add Key
+                  </button>
+                  <button
+                    onClick={() => setShowSettings(false)}
+                    className="flex-1 h-10 rounded-md bg-white/5 text-white/80 hover:bg-white/10 text-xs font-semibold transition-all border border-white/5"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
+      )}
+
+      {showApiKeyModal && (
+        <ApiKeyModal
+          overlay
+          title="Add MuAPI Key"
+          subtitle="Cloud models need a MuAPI key. Local/demo mode works without one."
+          onSave={handleKeySave}
+          onClose={() => setShowApiKeyModal(false)}
+        />
       )}
     </div>
   );

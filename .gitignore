@@ -31,6 +31,9 @@ release/
 .next/
 out/
 
+# Local model downloads and inference binaries
+.local-ai/
+
 # Misc
 *.pem
 .env
