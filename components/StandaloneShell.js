@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ImageStudio, VideoStudio, ClippingStudio, VibeMotionStudio, LipSyncStudio, CinemaStudio, AudioStudio, MarketingStudio, WorkflowStudio, AgentStudio, AppsStudio, getUserBalance } from 'studio';
 import LocalModelsPanel from './LocalModelsPanel';
+import ProvidersPanel from './ProvidersPanel';
 
 const DesignAgentStudio = dynamic(() => import('studio').then(mod => mod.DesignAgentStudio), {
   ssr: false,
@@ -382,6 +383,7 @@ export default function StandaloneShell() {
 
             <div className="mb-8">
               <LocalModelsPanel />
+              <ProvidersPanel />
             </div>
             
             {apiKey ? (
