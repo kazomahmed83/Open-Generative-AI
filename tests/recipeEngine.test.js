@@ -72,3 +72,29 @@ test('readResult handles wildcard + selectWithField (Gemini)', () => {
   assert.equal(eng.readResult(data, recipe), 'IMG');
   assert.equal(eng.readMime(data, recipe), 'image/png');
 });
+
+test('buildRequest composes a bearer JSON image request', () => {
+  const recipe = { kind: 'image', path: '/v1/images/generations', authStyle: 'bearer', body: { model: '{{model}}', prompt: '{{prompt}}', size: '{{size}}', n: 1 }, resultPath: 'data[0].b64_json', resultType: 'base64' };
+  const req = eng.buildRequest(recipe, { baseUrl: 'https://api.openai.com/', apiKey: 'sk' }, 'gpt-image-1', { prompt: 'cat', aspect_ratio: '1:1' });
+  assert.equal(req.url, 'https://api.openai.com/v1/images/generations');
+  assert.equal(req.method, 'POST');
+  assert.equal(req.headers.Authorization, 'Bearer sk');
+  assert.equal(req.headers['Content-Type'], 'application/json');
+  assert.deepEqual(req.body, { model: 'gpt-image-1', prompt: 'cat', size: '1024x1024', n: 1 });
+  assert.equal(req.bodyType, 'json');
+});
+
+test('buildRequest supports header auth + {model} in path (Gemini) and omits Content-Type for multipart', () => {
+  const gem = { kind: 'image', path: '/v1/models/{model}:generateContent', authStyle: 'header', authHeader: 'x-goog-api-key', body: { contents: [{ parts: [{ text: '{{prompt}}' }] }] }, resultPath: 'candidates[0].content.parts[*].inlineData.data', resultType: 'base64' };
+  const r1 = eng.buildRequest(gem, { baseUrl: 'https://g.googleapis.com', apiKey: 'K' }, 'gemini-x', { prompt: 'cat' });
+  assert.equal(r1.url, 'https://g.googleapis.com/v1/models/gemini-x:generateContent');
+  assert.equal(r1.headers['x-goog-api-key'], 'K');
+  assert.equal(r1.headers.Authorization, undefined);
+
+  const stab = { kind: 'image', path: '/v2beta/stable-image/generate/core', bodyType: 'multipart', authStyle: 'bearer', headers: { Accept: 'application/json' }, body: { prompt: '{{prompt}}', aspect_ratio: '{{aspect_ratio}}' }, resultPath: 'image', resultType: 'base64' };
+  const r2 = eng.buildRequest(stab, { baseUrl: 'https://api.stability.ai', apiKey: 'K' }, 'core', { prompt: 'cat', aspect_ratio: '16:9' });
+  assert.equal(r2.bodyType, 'multipart');
+  assert.equal(r2.headers['Content-Type'], undefined); // boundary set by the HTTP layer
+  assert.equal(r2.headers.Accept, 'application/json');
+  assert.deepEqual(r2.body, { prompt: 'cat', aspect_ratio: '16:9' });
+});
