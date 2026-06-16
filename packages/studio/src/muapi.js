@@ -1,4 +1,5 @@
 import { getModelById, getVideoModelById, getI2IModelById, getI2VModelById, getV2VModelById, getLipSyncModelById, getAudioModelById } from './models.js';
+import * as localApi from './local-api.js';
 
 // In an http(s) browser we route through the host app's proxy (Next.js routes
 // under /api/* re-issue the call server-side) so api.muapi.ai CORS is bypassed.
@@ -12,6 +13,18 @@ function notifyAuthRequired(status, detail) {
     if (typeof window === 'undefined') return;
     if (status !== 401 && status !== 403) return;
     window.dispatchEvent(new CustomEvent('muapi:auth-required', { detail: { status, message: detail } }));
+}
+
+// Local-first uploads: route to the on-device runtime (.local-ai/assets via
+// /api/local-ai/upload) unless the user has explicitly opted into cloud. Cloud is
+// "explicit" only when a MuAPI key is present AND the og_cloud_enabled flag is set —
+// the shell sets/clears that flag in lockstep with the key. Cloud studios
+// (video/audio/marketing/…) need S3-hosted URLs that MuAPI's servers can fetch, so
+// they take the cloud path; the decoupled Image Studio stays local by default.
+function isCloudUploadEnabled(apiKey) {
+    if (!apiKey) return false;
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('og_cloud_enabled') === '1';
 }
 
 async function pollForResult(requestId, key, maxAttempts = 900, interval = 2000) {
@@ -201,7 +214,13 @@ export async function generateAudio(apiKey, params) {
     return submitAndPoll(endpoint, payload, apiKey, params.onRequestId, 900);
 }
 
-export function uploadFile(apiKey, file, onProgress) {
+export async function uploadFile(apiKey, file, onProgress) {
+    // Local-first by default; only use MuAPI's S3 presign when cloud is explicitly enabled.
+    if (!isCloudUploadEnabled(apiKey)) {
+        const { url } = await localApi.uploadFile(file);
+        if (onProgress) onProgress(100);
+        return url;
+    }
     return new Promise((resolve, reject) => {
         const url = `${BASE_URL}/api/v1/upload_file`;
         const formData = new FormData();

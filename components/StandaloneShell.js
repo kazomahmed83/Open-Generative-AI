@@ -146,11 +146,15 @@ export default function StandaloneShell() {
       fetchBalance(stored);
       // Sync cookie immediately on mount to establish identity for background requests
       document.cookie = `muapi_key=${stored}; path=/; max-age=31536000; SameSite=Lax`;
+      // A stored key means the user opted into cloud — keep uploads (and cloud studios) on S3.
+      localStorage.setItem('og_cloud_enabled', '1');
     }
   }, [fetchBalance]);
 
   const handleKeySave = useCallback((key) => {
     localStorage.setItem(STORAGE_KEY, key);
+    // Opting into cloud (legacy MuAPI): route uploads to S3 so cloud studios work.
+    localStorage.setItem('og_cloud_enabled', '1');
     setApiKey(key);
     fetchBalance(key);
     document.cookie = `muapi_key=${key}; path=/; max-age=31536000; SameSite=Lax`;
@@ -160,6 +164,8 @@ export default function StandaloneShell() {
 
   const handleKeyChange = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    // Back to local-first: uploads return to on-device storage.
+    localStorage.removeItem('og_cloud_enabled');
     setApiKey(null);
     setBalance(null);
     document.cookie = "muapi_key=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
@@ -358,6 +364,15 @@ export default function StandaloneShell() {
 
       {/* Studio Content */}
       <div className="flex-1 min-h-0 relative overflow-hidden">
+        {/* Cloud-legacy hint: the non-image studios are still MuAPI-backed until their local backends land (M4–M9). */}
+        {!apiKey && activeTab !== 'image' && (
+          <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-30 max-w-[92%]">
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 backdrop-blur-md text-[11px] font-semibold text-amber-300/90 shadow-lg text-center">
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 flex-shrink-0" />
+              This studio runs on Cloud (MuAPI) — optional legacy. Add a key in Settings to use it; a local backend is coming.
+            </div>
+          </div>
+        )}
         {activeTab === 'image'   && <ImageStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'video'   && <VideoStudio   apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
         {activeTab === 'clipping' && <ClippingStudio apiKey={apiKey} droppedFiles={droppedFiles} onFilesHandled={handleFilesHandled} />}
@@ -391,7 +406,7 @@ export default function StandaloneShell() {
             <div className="space-y-4 mb-8">
               <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
                 <label className="block text-xs font-bold text-white/30 mb-2">
-                   Active API Key
+                   Active Cloud (MuAPI) Key — optional legacy
                 </label>
                 <div className="text-[13px] font-mono text-white/80">
                   {apiKey.slice(0, 8)}••••••••••••••••
@@ -419,10 +434,10 @@ export default function StandaloneShell() {
                 <div className="space-y-4 mb-8">
                   <div className="bg-white/5 border border-white/[0.03] rounded-md p-4">
                     <label className="block text-xs font-bold text-white/30 mb-2">
-                      Studio Mode
+                      Studio Mode — Local-first
                     </label>
                     <div className="text-[13px] text-white/70 leading-relaxed">
-                      Local/demo mode is active. Add a MuAPI key only when you want to run cloud models.
+                      Local-first mode is active — Image Studio runs fully on-device (local engines + your own API providers), and uploads stay on your machine. Cloud (MuAPI) is an optional legacy path; add a key only to use the cloud-backed studios (video, audio, marketing, …) until their local backends land.
                     </div>
                   </div>
                 </div>
@@ -452,8 +467,8 @@ export default function StandaloneShell() {
       {showApiKeyModal && (
         <ApiKeyModal
           overlay
-          title="Add MuAPI Key"
-          subtitle="Cloud models need a MuAPI key. Local/demo mode works without one."
+          title="Add Cloud (MuAPI) Key — optional legacy"
+          subtitle="Cloud (MuAPI) is optional and only needed for the cloud-backed studios (video, audio, marketing, …). Image Studio works fully without a key."
           onSave={handleKeySave}
           onClose={() => setShowApiKeyModal(false)}
         />

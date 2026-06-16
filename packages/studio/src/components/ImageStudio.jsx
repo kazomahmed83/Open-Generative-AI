@@ -605,96 +605,6 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
   );
 }
 
-// ─── ModelDropdown ────────────────────────────────────────────────────────────
-
-function ModelDropdown({ models, selectedModel, onSelect, onClose }) {
-  const [search, setSearch] = useState("");
-
-  const filtered = models.filter(
-    (m) =>
-      m.name.toLowerCase().includes(search.toLowerCase()) ||
-      m.id.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  return (
-    <div className="flex flex-col gap-2 h-full max-h-[60vh]">
-      <div className="border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-2.5 border border-white/5 focus-within:border-primary/50 transition-colors">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            className="text-muted"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search models..."
-            value={search}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-transparent border-none text-xs text-white focus:ring-0 w-full p-0 focus:outline-none"
-          />
-        </div>
-      </div>
-      <div className="text-xs font-medium text-secondary py-2 shrink-0">
-        Available models
-      </div>
-      <div className="flex flex-col gap-1.5 overflow-y-auto custom-scrollbar pr-1 pb-2">
-        {filtered.map((m) => (
-          <div
-            key={m.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(m);
-              onClose();
-            }}
-            className={`flex items-center justify-between p-3.5 hover:bg-white/5 rounded-lg cursor-pointer transition-all border border-transparent hover:border-white/5 ${
-              selectedModel === m.id ? "bg-white/5 border-white/5" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <div
-                className={`w-10 h-10 ${
-                  m.family === "kontext"
-                    ? "bg-blue-500/10 text-blue-400"
-                    : m.family === "effects"
-                      ? "bg-purple-500/10 text-purple-400"
-                      : "bg-primary/10 text-primary"
-                } border border-white/5 rounded-full flex items-center justify-center font-bold text-xs shadow-inner uppercase`}
-              >
-                {m.name.charAt(0)}
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs font-bold text-white tracking-tight">
-                  {m.name}
-                </span>
-              </div>
-            </div>
-            {selectedModel === m.id && (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="4"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── SimpleDropdown ───────────────────────────────────────────────────────────
 
 function SimpleDropdown({ title, options, selected, onSelect, onClose }) {
@@ -750,7 +660,6 @@ export default function ImageStudio({
   // ── Model / mode state ──────────────────────────────────────────────────
   const [imageMode, setImageMode] = useState(false); // false=t2i, true=i2i
   const [selectedModelId, setSelectedModelId] = useState(t2iModels[0].id);
-  const [selectedModelName, setSelectedModelName] = useState(t2iModels[0].name);
   const [selectedAr, setSelectedAr] = useState(
     t2iModels[0].inputs?.aspect_ratio?.default || "1:1",
   );
@@ -813,7 +722,6 @@ export default function ImageStudio({
         const data = JSON.parse(stored);
         if (data.imageMode !== undefined) setImageMode(data.imageMode);
         if (data.selectedModelId) setSelectedModelId(data.selectedModelId);
-        if (data.selectedModelName) setSelectedModelName(data.selectedModelName);
         if (data.selectedAr) setSelectedAr(data.selectedAr);
         if (data.selectedQuality) setSelectedQuality(data.selectedQuality);
         if (data.selectedEffect) setSelectedEffect(data.selectedEffect);
@@ -871,7 +779,6 @@ export default function ImageStudio({
         const state = {
           imageMode,
           selectedModelId,
-          selectedModelName,
           selectedAr,
           selectedQuality,
           selectedEffect,
@@ -890,7 +797,6 @@ export default function ImageStudio({
   }, [
     imageMode,
     selectedModelId,
-    selectedModelName,
     selectedAr,
     selectedQuality,
     selectedEffect,
@@ -950,7 +856,6 @@ export default function ImageStudio({
   }, [droppedFiles, onFilesHandled, processDroppedImages]);
 
   // ── Derived: current model lists & helpers ───────────────────────────────
-  const currentModels = imageMode ? i2iModels : t2iModels;
   const currentAspectRatios = imageMode
     ? getAspectRatiosForI2IModel(selectedModelId)
     : getAspectRatiosForModel(selectedModelId);
@@ -986,7 +891,6 @@ export default function ImageStudio({
         const effects = getEffectsForI2IModel(firstI2I.id);
         setImageMode(true);
         setSelectedModelId(firstI2I.id);
-        setSelectedModelName(firstI2I.name);
         setSelectedAr(ars[0] || "1:1");
         setSelectedQuality(resolutions[0] || null);
         setSelectedEffect(effects.length > 0 ? (getDefaultEffectForI2IModel(firstI2I.id) || effects[0]) : "");
@@ -1003,33 +907,11 @@ export default function ImageStudio({
     const ars = getAspectRatiosForModel(firstT2I.id);
     const resolutions = getResolutionsForModel(firstT2I.id);
     setSelectedModelId(firstT2I.id);
-    setSelectedModelName(firstT2I.name);
     setSelectedAr(ars[0] || "1:1");
     setSelectedQuality(resolutions[0] || null);
     setSelectedEffect("");
     setMaxImages(1);
   }, []);
-
-  // ── Model selection ──────────────────────────────────────────────────────
-  const handleModelSelect = (m) => {
-    const ars = imageMode
-      ? getAspectRatiosForI2IModel(m.id)
-      : getAspectRatiosForModel(m.id);
-    const resolutions = imageMode
-      ? getResolutionsForI2IModel(m.id)
-      : getResolutionsForModel(m.id);
-    setSelectedModelId(m.id);
-    setSelectedModelName(m.name);
-    setSelectedAr(ars[0] || "1:1");
-    setSelectedQuality(resolutions[0] || null);
-    if (imageMode) {
-      setMaxImages(getMaxImagesForI2IModel(m.id));
-      const effects = getEffectsForI2IModel(m.id);
-      setSelectedEffect(effects.length > 0 ? (getDefaultEffectForI2IModel(m.id) || effects[0]) : "");
-    } else {
-      setSelectedEffect("");
-    }
-  };
 
   // ── History helpers ──────────────────────────────────────────────────────
   const addToHistory = useCallback(
@@ -1054,7 +936,6 @@ export default function ImageStudio({
     const ars = getAspectRatiosForModel(firstT2I.id);
     const resolutions = getResolutionsForModel(firstT2I.id);
     setSelectedModelId(firstT2I.id);
-    setSelectedModelName(firstT2I.name);
     setSelectedAr(ars[0] || "1:1");
     setSelectedQuality(resolutions[0] || null);
     setSelectedEffect("");
