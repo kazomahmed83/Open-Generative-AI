@@ -109,7 +109,7 @@ Each milestone is independently shippable and verifiable. Effort is rough dev-da
 
 ### M0 — Foundation: shared local runtime (headless) · ~3–4d · **detailed plan written**
 - **Goal:** `lib/local-runtime/` exists and a `POST /api/local-ai/generate` produces a real sd.cpp image, saved to `.local-ai/assets/`, served at `/api/assets/[key]`.
-- **Build:** `catalog.js`, `providers/index.js`, `providers/sdcpp.js` (port of `localInference.generate`), `storage.js`, `jobs.js` (in-memory + SSE), `app/api/local-ai/generate/route.js`, `app/api/assets/[key]/route.js`. Add `"test": "node --test tests/"`.
+- **Build:** `catalog.js`, `providers/index.js`, `providers/sdcpp.js` (port of `localInference.generate`), `storage.js`, `jobs.js` (in-memory + SSE), `app/api/local-ai/generate/route.js`, `app/api/assets/[key]/route.js`. Add `"test": "node --test \"tests/*.test.js\""`. **All new Node-side modules are CommonJS** (verified: ESM-`.js` + `await import()` fails on this Node 25/Windows; the bare `node --test tests/` dir form is also broken — use the glob).
 - **Exit:** `curl` the generate route with a downloaded model → PNG saved + URL returned + progress streamed. Unit tests green. **No UI change yet.**
 
 ### M1 — Image Studio vertical (first user-visible win) · ~2–3d · **detailed plan written**
@@ -175,7 +175,7 @@ Each milestone is independently shippable and verifiable. Effort is rough dev-da
 - **Unified catalog** — one normalized entry shape (above) across local + api + per-subsystem model lists. `models_dump.json` is kept only as a *reference* for param schemas; it is not a runtime dependency.
 - **Config & secrets** — API provider configs/keys in `.local-ai/config.json` (gitignored, never committed). No telemetry; fully offline-capable.
 - **Process safety** — spawned binaries get explicit arg arrays (never shell strings), bounded concurrency, timeouts, and cancellation (kill on client disconnect). Validate model/param inputs before spawn.
-- **Testing** — pure runtime modules unit-tested with `node --test tests/` (matches the 4 existing tests). Each vertical gets a Playwright e2e (webapp-testing skill). Adversarially verify "it works" with real output before claiming done (verification-before-completion).
+- **Testing** — pure runtime modules are CommonJS, unit-tested with `node --test "tests/*.test.js"` (matches the 4 existing CJS tests). Each vertical gets a Playwright e2e (webapp-testing skill). Adversarially verify "it works" with real output before claiming done (verification-before-completion).
 - **Branching/commits** — work on a `local-first-platform` branch off `main` (never commit planning churn to `main` directly); atomic commits per task; commit only when asked.
 
 ---
