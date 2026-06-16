@@ -782,6 +782,8 @@ export default function ImageStudio({
   const [localModels, setLocalModels] = useState([]);
   const [selectedLocalModelId, setSelectedLocalModelId] = useState(null);
   const [localProgress, setLocalProgress] = useState(null);
+  const [apiModels, setApiModels] = useState([]); // configured API image models (api:* catalog entries)
+  const [selectedApiModelId, setSelectedApiModelId] = useState(null);
 
   // Use prop history if provided, otherwise local
   const history = historyItems ?? localHistory;
@@ -838,6 +840,20 @@ export default function ImageStudio({
         if (imgs[0]) setSelectedLocalModelId(imgs[0].id);
       })
       .catch(() => setLocalModels([]));
+  }, []);
+
+  // ── Fetch configured API provider image models on mount ──────────────────
+  useEffect(() => {
+    fetch("/api/local-ai/catalog")
+      .then((r) => r.json())
+      .then((d) => {
+        const apis = (d.catalog || []).filter(
+          (m) => m.source === "api" && m.kind === "image",
+        );
+        setApiModels(apis);
+        if (apis[0]) setSelectedApiModelId(apis[0].id);
+      })
+      .catch(() => setApiModels([]));
   }, []);
 
   // ── Adjust height on load ────────────────────────────────────────────────
@@ -1080,6 +1096,14 @@ export default function ImageStudio({
               (evt) => setLocalProgress(evt),
             );
           }
+          if (apiModels.length > 0) {
+            // Configured API providers take over the "API" side (text-to-image).
+            return await localApi.generateImage(
+              selectedApiModelId,
+              { prompt: prompt.trim(), aspect_ratio: selectedAr },
+              (evt) => setLocalProgress(evt),
+            );
+          }
           if (imageMode) {
             const genParams = {
               model: selectedModelId,
@@ -1113,14 +1137,14 @@ export default function ImageStudio({
             id: res.id || Math.random().toString(36).substring(7),
             url: res.url,
             prompt: prompt.trim(),
-            model: useLocalModel ? selectedLocalModelId : selectedModelId,
+            model: useLocalModel ? selectedLocalModelId : (apiModels.length > 0 ? selectedApiModelId : selectedModelId),
             aspect_ratio: selectedAr,
             timestamp: new Date().toISOString(),
           };
           addToHistory(entry);
           onGenerationComplete?.({
             url: res.url,
-            model: useLocalModel ? selectedLocalModelId : selectedModelId,
+            model: useLocalModel ? selectedLocalModelId : (apiModels.length > 0 ? selectedApiModelId : selectedModelId),
             prompt: prompt.trim(),
             type: "image",
           });
@@ -1323,6 +1347,18 @@ export default function ImageStudio({
                     </option>
                   ))}
                 </select>
+              ) : apiModels.length > 0 ? (
+                <select
+                  value={selectedApiModelId || ""}
+                  onChange={(e) => setSelectedApiModelId(e.target.value)}
+                  className="bg-white/5 text-white text-sm rounded-lg px-2 py-1 border border-white/10 outline-none"
+                >
+                  {apiModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
               ) : (
                 /* Model button (MuAPI) */
                 <div className="relative">
@@ -1495,8 +1531,8 @@ export default function ImageStudio({
               </div>
             </div>
 
-            {/* Local generation progress hint */}
-            {useLocalModel && localProgress?.totalSteps ? (
+            {/* Local / API generation progress hint */}
+            {localProgress?.totalSteps ? (
               <span className="text-xs text-white/50 ml-2">
                 step {localProgress.step}/{localProgress.totalSteps}
               </span>
