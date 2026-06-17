@@ -31,7 +31,7 @@ test('Gemini image preset uses header auth, {model} path, wildcard result', () =
   const g = getPreset('gemini');
   const recipe = JSON.parse(g.imageRecipe);
   const req = eng.buildRequest(recipe, { baseUrl: g.baseUrl, apiKey: 'K' }, 'gemini-3.1-flash-image', { prompt: 'cat', aspect_ratio: '16:9' });
-  assert.match(req.url, /\/v1\/models\/gemini-3\.1-flash-image:generateContent$/);
+  assert.match(req.url, /\/v1beta\/models\/gemini-3\.1-flash-image:generateContent$/);
   assert.equal(req.headers['x-goog-api-key'], 'K');
   assert.equal(recipe.selectWithField, 'inlineData');
 });
