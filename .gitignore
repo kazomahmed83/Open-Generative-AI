@@ -31,6 +31,16 @@ release/
 .next/
 out/
 
+# Local model downloads and inference binaries
+.local-ai/
+
+# Test/verification artifacts (Playwright, screenshots)
+.playwright-mcp/
+*-verified.png
+# Loose verification screenshots at repo root
+/*.jpeg
+/model-library-*.png
+
 # Misc
 *.pem
 .env

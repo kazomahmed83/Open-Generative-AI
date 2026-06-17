@@ -7,7 +7,9 @@ const { spawn, execFile } = require('child_process');
 const {
     getBundledBinaryResourceDir,
     pickBinaryAssetForPlatform,
+    pickCudartAssetForPlatform,
 } = require('./localInferenceAssets');
+const { detectGpu } = require('../../lib/local-runtime/gpu.js');
 const {
     formatStartupProgressMessage,
     parseGenerationProgressChunk,
@@ -252,7 +254,9 @@ async function downloadBinary(mainWindow) {
             );
 
             let chosen = null;
+            let cudartChosen = null; // CUDA runtime DLLs to extract alongside a cuda binary
             let lastSeen = [];
+            const hasGpu = !!detectGpu();
             for (const release of releases) {
                 const zips = (release.assets || [])
                     .filter(a => a.name.endsWith('.zip'));
@@ -261,9 +265,15 @@ async function downloadBinary(mainWindow) {
                     platform: process.platform,
                     arch: process.arch,
                     zipNames: lastSeen,
+                    gpu: hasGpu, // prefer the CUDA build when an NVIDIA GPU is present
                 });
                 if (pickedName) {
                     chosen = zips.find(a => a.name === pickedName);
+                    // A cuda binary needs the separate CUDA runtime bundle from the same release.
+                    if (hasGpu && /cuda/i.test(pickedName)) {
+                        const cudartName = pickCudartAssetForPlatform({ platform: process.platform, zipNames: lastSeen });
+                        if (cudartName) cudartChosen = zips.find(a => a.name === cudartName);
+                    }
                     break;
                 }
             }
@@ -291,6 +301,16 @@ async function downloadBinary(mainWindow) {
         send({ phase: 'extracting', progress: 0.95 });
         await extractZip(zipPath, BIN_DIR);
         fs.unlinkSync(zipPath);
+
+        // For a CUDA binary, also fetch+extract the CUDA runtime DLLs (cudart/cublas) into BIN_DIR
+        // so the GPU build runs without a separate CUDA toolkit install.
+        if (cudartChosen) {
+            send({ phase: 'downloading-runtime', progress: 0 });
+            const cudartZip = path.join(BIN_DIR, cudartChosen.name);
+            await downloadFile(cudartChosen.browser_download_url, cudartZip, (p) => send({ phase: 'downloading-runtime', progress: p }));
+            await extractZip(cudartZip, BIN_DIR);
+            fs.unlinkSync(cudartZip);
+        }
 
         // The zip may extract into a subdirectory — find the binary wherever it landed
         const foundBinary = findFile(BIN_DIR, BINARY_NAME);

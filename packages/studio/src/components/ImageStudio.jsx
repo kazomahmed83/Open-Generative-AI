@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { generateImage, generateI2I, uploadFile } from "../muapi.js";
+import { generateI2I, uploadFile } from "../muapi.js"; // MuAPI: i2i (optional legacy) + uploads only; t2i is local/API
+import * as localApi from "../local-api.js";
 import {
   t2iModels,
   i2iModels,
@@ -604,96 +605,6 @@ function UploadButton({ apiKey, maxImages, onSelect, onClear, initialUrls = [] }
   );
 }
 
-// ─── ModelDropdown ────────────────────────────────────────────────────────────
-
-function ModelDropdown({ models, selectedModel, onSelect, onClose }) {
-  const [search, setSearch] = useState("");
-
-  const filtered = models.filter(
-    (m) =>
-      m.name.toLowerCase().includes(search.toLowerCase()) ||
-      m.id.toLowerCase().includes(search.toLowerCase()),
-  );
-
-  return (
-    <div className="flex flex-col gap-2 h-full max-h-[60vh]">
-      <div className="border-b border-white/5 shrink-0">
-        <div className="flex items-center gap-3 bg-white/5 rounded-xl px-4 py-2.5 border border-white/5 focus-within:border-primary/50 transition-colors">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            className="text-muted"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="M21 21l-4.35-4.35" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search models..."
-            value={search}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-transparent border-none text-xs text-white focus:ring-0 w-full p-0 focus:outline-none"
-          />
-        </div>
-      </div>
-      <div className="text-xs font-medium text-secondary py-2 shrink-0">
-        Available models
-      </div>
-      <div className="flex flex-col gap-1.5 overflow-y-auto custom-scrollbar pr-1 pb-2">
-        {filtered.map((m) => (
-          <div
-            key={m.id}
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelect(m);
-              onClose();
-            }}
-            className={`flex items-center justify-between p-3.5 hover:bg-white/5 rounded-lg cursor-pointer transition-all border border-transparent hover:border-white/5 ${
-              selectedModel === m.id ? "bg-white/5 border-white/5" : ""
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <div
-                className={`w-10 h-10 ${
-                  m.family === "kontext"
-                    ? "bg-blue-500/10 text-blue-400"
-                    : m.family === "effects"
-                      ? "bg-purple-500/10 text-purple-400"
-                      : "bg-primary/10 text-primary"
-                } border border-white/5 rounded-full flex items-center justify-center font-bold text-xs shadow-inner uppercase`}
-              >
-                {m.name.charAt(0)}
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs font-bold text-white tracking-tight">
-                  {m.name}
-                </span>
-              </div>
-            </div>
-            {selectedModel === m.id && (
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="4"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 // ─── SimpleDropdown ───────────────────────────────────────────────────────────
 
 function SimpleDropdown({ title, options, selected, onSelect, onClose }) {
@@ -737,6 +648,260 @@ function SimpleDropdown({ title, options, selected, onSelect, onClose }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+// A small monogram "logo" per model so it's recognisable at a glance (brand-ish colors
+// for known API providers; family chips for local models). No image assets needed.
+const PROVIDER_ICON = {
+  openai: { label: "AI", cls: "bg-[#10a37f] text-white" },
+  pollinations: { label: "✿", cls: "bg-pink-500 text-white" },
+  gemini: { label: "G", cls: "bg-[#1a73e8] text-white" },
+  "google-gemini-api": { label: "G", cls: "bg-[#1a73e8] text-white" },
+  openrouter: { label: "OR", cls: "bg-indigo-500 text-white" },
+  together: { label: "T", cls: "bg-blue-600 text-white" },
+  siliconflow: { label: "SF", cls: "bg-cyan-600 text-white" },
+  groq: { label: "Gq", cls: "bg-orange-500 text-white" },
+  stability: { label: "St", cls: "bg-purple-600 text-white" },
+  deepseek: { label: "DS", cls: "bg-blue-700 text-white" },
+  moonshot: { label: "Ki", cls: "bg-slate-500 text-white" },
+};
+function modelIcon(m, isLocal) {
+  if (isLocal) {
+    const id = (m && m.id) || "";
+    if (/z[-_]?image/i.test(id)) return { label: "Z", cls: "bg-fuchsia-600 text-white" };
+    if (/xl|sdxl/i.test(id)) return { label: "XL", cls: "bg-amber-600 text-white" };
+    if (/flux/i.test(id)) return { label: "FX", cls: "bg-violet-600 text-white" };
+    return { label: "SD", cls: "bg-emerald-700 text-white" };
+  }
+  const p = (m && m.provider) || "";
+  return PROVIDER_ICON[p] || { label: ((m && m.name) || "?").trim().slice(0, 1).toUpperCase(), cls: "bg-white/15 text-white/80" };
+}
+function ModelIcon({ info, size = 18 }) {
+  if (!info) return null;
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-[4px] font-bold shrink-0 ${info.cls}`}
+      style={{ width: size, height: size, fontSize: info.label.length > 1 ? 8 : 10, lineHeight: 1 }}
+    >
+      {info.label}
+    </span>
+  );
+}
+
+// Higgsfield-style model picker: a styled list of model rows with an optional badge
+// (free / ~$cost / local) and a check on the selected one. Replaces the native <select>.
+function ModelPickerPopover({ title, emptyHint, models, selectedId, onSelect, onClose, badgeFor, iconFor }) {
+  return (
+    <>
+      <div className="text-xs font-medium text-white/40 pb-2 border-b border-white/5 mb-2">{title}</div>
+      <div className="flex flex-col gap-0.5 max-h-[46vh] overflow-y-auto custom-scrollbar">
+        {(!models || models.length === 0) && (
+          <div className="text-xs text-white/40 px-2 py-3">{emptyHint || "Nothing here yet"}</div>
+        )}
+        {(models || []).map((m) => {
+          const badge = badgeFor ? badgeFor(m) : null;
+          const isSel = selectedId === m.id;
+          return (
+            <div
+              key={m.id}
+              onClick={(e) => { e.stopPropagation(); onSelect(m.id); onClose(); }}
+              className={`flex items-center justify-between gap-3 px-2 py-2 rounded-md cursor-pointer transition-all ${isSel ? "bg-[#22d3ee]/10" : "hover:bg-white/5"}`}
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                {iconFor && <ModelIcon info={iconFor(m)} />}
+                <span className={`text-xs font-semibold truncate ${isSel ? "text-[#22d3ee]" : "text-white/85"}`}>{m.name}</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                {badge && <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.cls}`}>{badge.text}</span>}
+                {isSel && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="4"><polyline points="20 6 9 17 4 12" /></svg>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Aspect-ratio picker that draws the SHAPE of each ratio (a rectangle scaled to a:b) plus
+// its label — the Higgsfield-style visual size chooser.
+// Friendly names + real-world use-cases so non-experts know what each ratio is for.
+const ASPECT_INFO = {
+  "1:1": { name: "Square", use: "Instagram post, avatar" },
+  "16:9": { name: "Landscape", use: "YouTube, desktop, slides" },
+  "9:16": { name: "Vertical", use: "Phone, Reels, TikTok, Stories" },
+  "4:3": { name: "Standard", use: "Classic photo, slides" },
+  "3:4": { name: "Portrait", use: "Photo print, Pinterest" },
+  "3:2": { name: "Photo", use: "DSLR landscape, prints" },
+  "2:3": { name: "Poster", use: "Portrait poster, print" },
+  "4:5": { name: "Feed portrait", use: "Instagram feed" },
+  "5:4": { name: "Portrait", use: "Large-format photo" },
+  "21:9": { name: "Cinematic", use: "Ultrawide, film banner" },
+  "2:1": { name: "Banner", use: "X / header cover" },
+};
+function aspectInfo(ar) {
+  if (ASPECT_INFO[ar]) return ASPECT_INFO[ar];
+  const [a, b] = String(ar).split(":").map(Number);
+  if (!a || !b) return { name: ar, use: "" };
+  if (a === b) return { name: "Square", use: "" };
+  return a > b ? { name: "Landscape", use: "" } : { name: "Vertical", use: "" };
+}
+
+function AspectRatioPicker({ options, selected, onSelect, onClose }) {
+  const boxFor = (ar) => {
+    const [a, b] = String(ar).split(":").map(Number);
+    const max = 22;
+    if (!a || !b) return { w: 20, h: 20 };
+    return a >= b
+      ? { w: max, h: Math.max(8, Math.round((max * b) / a)) }
+      : { w: Math.max(8, Math.round((max * a) / b)), h: max };
+  };
+  return (
+    <>
+      <div className="text-xs font-medium text-white/40 pb-2 border-b border-white/5 mb-2">Aspect ratio</div>
+      <div className="grid grid-cols-2 gap-2">
+        {(options || []).map((ar) => {
+          const d = boxFor(ar);
+          const isSel = selected === ar;
+          const info = aspectInfo(ar);
+          return (
+            <button
+              key={ar}
+              type="button"
+              title={info.use ? `${info.name} — ${info.use}` : info.name}
+              onClick={(e) => { e.stopPropagation(); onSelect(ar); onClose(); }}
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-md border text-left transition-all ${isSel ? "border-[#22d3ee] bg-[#22d3ee]/10" : "border-white/10 hover:border-white/30 hover:bg-white/5"}`}
+            >
+              <span className="flex items-center justify-center shrink-0" style={{ width: 26, height: 26 }}>
+                <span className={`rounded-[2px] ${isSel ? "bg-[#22d3ee]" : "bg-white/50"}`} style={{ width: d.w, height: d.h }} />
+              </span>
+              <span className="min-w-0">
+                <span className={`block text-[11px] font-bold leading-tight ${isSel ? "text-[#22d3ee]" : "text-white/80"}`}>{info.name || ar}</span>
+                <span className="block text-[9px] text-white/45 leading-tight truncate">{ar}{info.use ? ` · ${info.use}` : ""}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Resolution picker for local models: each option shows the resulting pixel size, a speed tag,
+// and its rough RAM cost — so the memory/speed trade-off is visible before you generate.
+function LocalResolutionPicker({ model, ar, options, selected, onSelect, onClose }) {
+  return (
+    <>
+      <div className="text-xs font-medium text-white/40 pb-2 border-b border-white/5 mb-2">Resolution · lower = faster, less RAM</div>
+      <div className="flex flex-col gap-0.5">
+        {(options || []).map((base) => {
+          const [w, h] = localDims(base, ar);
+          const gib = estLocalGiB(model, base, ar);
+          const isSel = selected === base;
+          return (
+            <button
+              key={base}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onSelect(base); onClose(); }}
+              className={`flex items-center justify-between gap-3 px-2 py-2 rounded-md text-left transition-all ${isSel ? "bg-[#22d3ee]/10" : "hover:bg-white/5"}`}
+            >
+              <span className="flex flex-col min-w-0">
+                <span className={`text-[11px] font-bold leading-tight ${isSel ? "text-[#22d3ee]" : "text-white/85"}`}>
+                  {base}px<span className="text-white/40 font-normal"> · {RES_TAG[base] || ""}</span>
+                </span>
+                <span className="text-[9px] text-white/40 leading-tight">{w}×{h}</span>
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                {gib != null && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${gib >= 9 ? "bg-amber-500/15 text-amber-300" : "bg-white/10 text-white/50"}`}>
+                    ~{gib.toFixed(1)} GB
+                  </span>
+                )}
+                {isSel && (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" strokeWidth="4"><polyline points="20 6 9 17 4 12" /></svg>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// Rough OpenAI image cost estimate (display-only). gpt-image-1 bills output image tokens
+// at $40/1M; dall-e-3 is flat per size/quality. Everything else is treated as free.
+// Heavy 1024-class local models need a large contiguous RAM buffer for the compute pass;
+// surface the rough peak so users aren't surprised by a long wait / OOM on low-memory machines.
+// Mirrors the server-side gate in lib/local-runtime/memory.js (which fails fast if RAM is short).
+const HEAVY_LOCAL_RAM = { "z-image": "~12 GB", sdxl: "~7 GB", flux: "~13 GB" };
+
+// Resolution choices (the short-side base, in px) offered per local model family. Lowering the
+// resolution shrinks the compute buffer (~W*H) so a heavy model fits RAM and runs faster.
+const LOCAL_RES_OPTIONS = { "z-image": [512, 768, 1024], sdxl: [512, 768, 1024], flux: [512, 768, 1024], sd1: [512, 768], sd2: [512, 768] };
+const LOCAL_RES_DEFAULT = { "z-image": 768, sdxl: 768, flux: 768, sd1: 512, sd2: 512 };
+const localResOptions = (m) => (m && LOCAL_RES_OPTIONS[m.type]) || [512, 768, 1024];
+const defaultLocalRes = (m) => (m && LOCAL_RES_DEFAULT[m.type]) || 512;
+
+// Client-side mirror of lib/local-runtime/memory.js so each resolution can show its rough RAM
+// cost. Keep the constants in sync with the server module (the server is the real gate).
+const _LOCAL_WEIGHTS = { "z-image": 5.4e9, sdxl: 4.5e9, flux: 7.0e9, sd1: 2.0e9, sd2: 2.0e9 };
+const _LOCAL_PER_PIXEL = { "z-image": 6740, sdxl: 2600, flux: 5000, sd1: 1500, sd2: 1500 };
+function localDims(base, ar) {
+  const [a, b] = String(ar || "1:1").split(":").map(Number);
+  if (!a || !b || a === b) return [base, base];
+  const long = Math.round((base * Math.max(a, b)) / Math.min(a, b) / 64) * 64;
+  return a > b ? [long, base] : [base, long];
+}
+function estLocalGiB(m, base, ar) {
+  if (!m) return null;
+  const w = _LOCAL_WEIGHTS[m.type] != null ? _LOCAL_WEIGHTS[m.type] : 2.0e9;
+  const pp = _LOCAL_PER_PIXEL[m.type] != null ? _LOCAL_PER_PIXEL[m.type] : 1500;
+  const [W, H] = localDims(base, ar);
+  return (w + pp * W * H) / 1024 ** 3;
+}
+const RES_TAG = { 512: "fast", 768: "balanced", 1024: "full" };
+
+// Pick the largest resolution whose estimated peak fits ~90% of free RAM (server preflight is
+// the real gate). Falls back to the smallest option when even that won't fit — better a likely
+// run than a guaranteed block. With free RAM unknown (0), use the model's static default.
+function autoFitRes(m, ar, freeBytes) {
+  const opts = localResOptions(m);
+  if (!freeBytes) return defaultLocalRes(m);
+  const freeGiB = freeBytes / 1024 ** 3;
+  let pick = opts[0];
+  for (const base of opts) { if (estLocalGiB(m, base, ar) <= freeGiB * 0.9) pick = base; }
+  return pick;
+}
+
+const GPT_IMAGE_TOKENS = {
+  "1024x1024": { low: 272, medium: 1056, high: 4160 },
+  "1024x1536": { low: 408, medium: 1584, high: 6240 },
+  "1536x1024": { low: 400, medium: 1568, high: 6208 },
+};
+const DALLE3_USD = {
+  "1024x1024": { standard: 0.04, hd: 0.08 },
+  "1792x1024": { standard: 0.08, hd: 0.12 },
+  "1024x1792": { standard: 0.08, hd: 0.12 },
+};
+function estimateImageCost(apiModel, quality, ar, count) {
+  if (!apiModel) return null;
+  const base = apiModel.apiModelId || "";
+  const size = (apiModel.sizeMap && apiModel.sizeMap[ar]) || "1024x1024";
+  let per = 0;
+  if (base === "gpt-image-1") {
+    const t = GPT_IMAGE_TOKENS[size] || GPT_IMAGE_TOKENS["1024x1024"];
+    const q = t[quality] != null ? quality : "high"; // 'auto' ≈ high cost
+    per = (t[q] != null ? t[q] : t.high) * 0.00004;
+  } else if (base === "dall-e-3") {
+    const d = DALLE3_USD[size] || DALLE3_USD["1024x1024"];
+    per = d[quality] != null ? d[quality] : d.standard;
+  } else {
+    return 0; // free / local / unknown
+  }
+  return per * (count || 1);
+}
+
 export default function ImageStudio({
   apiKey,
   onGenerationComplete,
@@ -749,7 +914,6 @@ export default function ImageStudio({
   // ── Model / mode state ──────────────────────────────────────────────────
   const [imageMode, setImageMode] = useState(false); // false=t2i, true=i2i
   const [selectedModelId, setSelectedModelId] = useState(t2iModels[0].id);
-  const [selectedModelName, setSelectedModelName] = useState(t2iModels[0].name);
   const [selectedAr, setSelectedAr] = useState(
     t2iModels[0].inputs?.aspect_ratio?.default || "1:1",
   );
@@ -775,6 +939,16 @@ export default function ImageStudio({
   const [activeHistoryIdx, setActiveHistoryIdx] = useState(0);
   const [batchSize, setBatchSize] = useState(1);
   const [localHistory, setLocalHistory] = useState([]); // [{id,url,prompt,model,aspect_ratio,timestamp}]
+
+  // ── Local model state (isolated from the MuAPI dropdown logic) ───────────
+  const [useLocalModel, setUseLocalModel] = useState(false);
+  const [localModels, setLocalModels] = useState([]);
+  const [selectedLocalModelId, setSelectedLocalModelId] = useState(null);
+  const [selectedLocalResolution, setSelectedLocalResolution] = useState(512);
+  const [freeMemBytes, setFreeMemBytes] = useState(0);
+  const [localProgress, setLocalProgress] = useState(null);
+  const [apiModels, setApiModels] = useState([]); // configured API image models (api:* catalog entries)
+  const [selectedApiModelId, setSelectedApiModelId] = useState(null);
 
   // Use prop history if provided, otherwise local
   const history = historyItems ?? localHistory;
@@ -804,7 +978,6 @@ export default function ImageStudio({
         const data = JSON.parse(stored);
         if (data.imageMode !== undefined) setImageMode(data.imageMode);
         if (data.selectedModelId) setSelectedModelId(data.selectedModelId);
-        if (data.selectedModelName) setSelectedModelName(data.selectedModelName);
         if (data.selectedAr) setSelectedAr(data.selectedAr);
         if (data.selectedQuality) setSelectedQuality(data.selectedQuality);
         if (data.selectedEffect) setSelectedEffect(data.selectedEffect);
@@ -817,6 +990,48 @@ export default function ImageStudio({
     } catch (err) {
       console.warn("Failed to load ImageStudio persistence:", err);
     }
+  }, []);
+
+  // ── Fetch downloaded local image models on mount ─────────────────────────
+  useEffect(() => {
+    fetch("/api/local-ai/models")
+      .then((r) => r.json())
+      .then((d) => {
+        // Show image models that are usable now: sd.cpp/ComfyUI checkpoints ("downloaded") AND
+        // installed multi-file recipes like FLUX.2 Klein, whose state is "ready" (a GGUF in unet/,
+        // not a checkpoints/ file, so it surfaces only as its recipe entry — never via the checkpoint lister).
+        const imgs = (d.models || []).filter(
+          (m) => m.category === "image" && (m.state === "downloaded" || m.state === "ready"),
+        );
+        setLocalModels(imgs);
+        if (typeof d.freeMemBytes === "number") setFreeMemBytes(d.freeMemBytes);
+        if (imgs[0]) setSelectedLocalModelId(imgs[0].id);
+      })
+      .catch(() => setLocalModels([]));
+  }, []);
+
+  // Auto-fit the resolution to free RAM whenever the selected local model changes, so a heavy
+  // model defaults to a size that actually runs (e.g. 512 on a tight machine, 1024 on a roomy
+  // one) instead of blocking. Changing the picker manually still overrides this.
+  useEffect(() => {
+    const m = localModels.find((x) => x.id === selectedLocalModelId);
+    if (m) setSelectedLocalResolution(autoFitRes(m, selectedAr, freeMemBytes));
+    // selectedAr intentionally omitted: don't reset the user's resolution on every aspect change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLocalModelId, localModels, freeMemBytes]);
+
+  // ── Fetch configured API provider image models on mount ──────────────────
+  useEffect(() => {
+    fetch("/api/local-ai/catalog")
+      .then((r) => r.json())
+      .then((d) => {
+        const apis = (d.catalog || []).filter(
+          (m) => m.source === "api" && m.kind === "image",
+        );
+        setApiModels(apis);
+        if (apis[0]) setSelectedApiModelId(apis[0].id);
+      })
+      .catch(() => setApiModels([]));
   }, []);
 
   // ── Adjust height on load ────────────────────────────────────────────────
@@ -834,7 +1049,6 @@ export default function ImageStudio({
         const state = {
           imageMode,
           selectedModelId,
-          selectedModelName,
           selectedAr,
           selectedQuality,
           selectedEffect,
@@ -853,7 +1067,6 @@ export default function ImageStudio({
   }, [
     imageMode,
     selectedModelId,
-    selectedModelName,
     selectedAr,
     selectedQuality,
     selectedEffect,
@@ -913,13 +1126,34 @@ export default function ImageStudio({
   }, [droppedFiles, onFilesHandled, processDroppedImages]);
 
   // ── Derived: current model lists & helpers ───────────────────────────────
-  const currentModels = imageMode ? i2iModels : t2iModels;
+  const inApiMode = !useLocalModel && !imageMode && apiModels.length > 0;
+  const apiModel = inApiMode ? apiModels.find((m) => m.id === selectedApiModelId) : null;
+  const apiQualityOptions = (apiModel && apiModel.qualityOptions) || [];
+  const costEst = inApiMode ? estimateImageCost(apiModel, selectedQuality, selectedAr, batchSize) : null;
+  const currentModel = useLocalModel
+    ? localModels.find((m) => m.id === selectedLocalModelId)
+    : apiModels.find((m) => m.id === selectedApiModelId);
+  const currentModelName = useLocalModel
+    ? (localModels.find((m) => m.id === selectedLocalModelId)?.name || (localModels.length ? "Select model" : "No local models"))
+    : (apiModels.find((m) => m.id === selectedApiModelId)?.name || (apiModels.length ? "Select model" : "No API models"));
+  const modelBadge = (m) => {
+    if (useLocalModel) {
+      const ram = m && HEAVY_LOCAL_RAM[m.type];
+      return ram
+        ? { text: `heavy · ${ram}`, cls: "bg-amber-500/15 text-amber-300" }
+        : { text: "local", cls: "bg-white/10 text-white/50" };
+    }
+    const c = estimateImageCost(m, m.defaultQuality || (m.qualityOptions && m.qualityOptions[0]), selectedAr, 1);
+    if (c === 0) return { text: "free", cls: "bg-emerald-500/15 text-emerald-300" };
+    if (c != null) return { text: `~$${c.toFixed(c < 0.1 ? 3 : 2)}`, cls: "bg-amber-500/15 text-amber-300" };
+    return null;
+  };
   const currentAspectRatios = imageMode
     ? getAspectRatiosForI2IModel(selectedModelId)
     : getAspectRatiosForModel(selectedModelId);
   const currentResolutions = imageMode
     ? getResolutionsForI2IModel(selectedModelId)
-    : getResolutionsForModel(selectedModelId);
+    : (inApiMode ? apiQualityOptions : getResolutionsForModel(selectedModelId));
   const currentQualityField = imageMode
     ? getQualityFieldForI2IModel(selectedModelId)
     : getQualityFieldForModel(selectedModelId);
@@ -949,7 +1183,6 @@ export default function ImageStudio({
         const effects = getEffectsForI2IModel(firstI2I.id);
         setImageMode(true);
         setSelectedModelId(firstI2I.id);
-        setSelectedModelName(firstI2I.name);
         setSelectedAr(ars[0] || "1:1");
         setSelectedQuality(resolutions[0] || null);
         setSelectedEffect(effects.length > 0 ? (getDefaultEffectForI2IModel(firstI2I.id) || effects[0]) : "");
@@ -966,33 +1199,11 @@ export default function ImageStudio({
     const ars = getAspectRatiosForModel(firstT2I.id);
     const resolutions = getResolutionsForModel(firstT2I.id);
     setSelectedModelId(firstT2I.id);
-    setSelectedModelName(firstT2I.name);
     setSelectedAr(ars[0] || "1:1");
     setSelectedQuality(resolutions[0] || null);
     setSelectedEffect("");
     setMaxImages(1);
   }, []);
-
-  // ── Model selection ──────────────────────────────────────────────────────
-  const handleModelSelect = (m) => {
-    const ars = imageMode
-      ? getAspectRatiosForI2IModel(m.id)
-      : getAspectRatiosForModel(m.id);
-    const resolutions = imageMode
-      ? getResolutionsForI2IModel(m.id)
-      : getResolutionsForModel(m.id);
-    setSelectedModelId(m.id);
-    setSelectedModelName(m.name);
-    setSelectedAr(ars[0] || "1:1");
-    setSelectedQuality(resolutions[0] || null);
-    if (imageMode) {
-      setMaxImages(getMaxImagesForI2IModel(m.id));
-      const effects = getEffectsForI2IModel(m.id);
-      setSelectedEffect(effects.length > 0 ? (getDefaultEffectForI2IModel(m.id) || effects[0]) : "");
-    } else {
-      setSelectedEffect("");
-    }
-  };
 
   // ── History helpers ──────────────────────────────────────────────────────
   const addToHistory = useCallback(
@@ -1017,7 +1228,6 @@ export default function ImageStudio({
     const ars = getAspectRatiosForModel(firstT2I.id);
     const resolutions = getResolutionsForModel(firstT2I.id);
     setSelectedModelId(firstT2I.id);
-    setSelectedModelName(firstT2I.name);
     setSelectedAr(ars[0] || "1:1");
     setSelectedQuality(resolutions[0] || null);
     setSelectedEffect("");
@@ -1025,10 +1235,23 @@ export default function ImageStudio({
   };
 
   // ── Generation ───────────────────────────────────────────────────────────
+  // Keep the selected quality valid for the active API model (options differ per model).
+  useEffect(() => {
+    if (!inApiMode || !apiQualityOptions.length) return;
+    if (!apiQualityOptions.includes(selectedQuality)) setSelectedQuality((apiModel && apiModel.defaultQuality) || apiQualityOptions[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inApiMode, selectedApiModelId, apiModels]);
+
   const handleGenerate = async () => {
     if (generating) return;
 
-    if (imageMode) {
+    if (useLocalModel) {
+      // Local generation is always text-to-image — requires a prompt.
+      if (!prompt.trim()) {
+        alert("Please enter a prompt to generate an image.");
+        return;
+      }
+    } else if (imageMode) {
       if (uploadedImageUrls.length === 0) {
         alert("Please upload a reference image first.");
         return;
@@ -1046,7 +1269,20 @@ export default function ImageStudio({
     try {
       const results = await Promise.all(
         Array.from({ length: batchSize }).map(async () => {
+          if (useLocalModel) {
+            return await localApi.generateImage(
+              selectedLocalModelId,
+              { prompt: prompt.trim(), aspect_ratio: selectedAr, resolution: selectedLocalResolution },
+              (evt) => setLocalProgress(evt),
+            );
+          }
           if (imageMode) {
+            // Image-to-image: optional legacy cloud (MuAPI). No local/API i2i yet.
+            if (!apiKey) {
+              throw new Error(
+                "Image-to-image needs a cloud (MuAPI) key — optional/legacy. Turn off Reference image to use local or API text-to-image.",
+              );
+            }
             const genParams = {
               model: selectedModelId,
               images_list: uploadedImageUrls,
@@ -1059,17 +1295,18 @@ export default function ImageStudio({
             }
             if (showEffectBtn && selectedEffect) genParams.name = selectedEffect;
             return await generateI2I(apiKey, genParams);
-          } else {
-            const genParams = {
-              model: selectedModelId,
-              prompt: prompt.trim(),
-              aspect_ratio: selectedAr,
-            };
-            if (currentQualityField && selectedQuality) {
-              genParams[currentQualityField] = selectedQuality;
-            }
-            return await generateImage(apiKey, genParams);
           }
+          if (apiModels.length > 0) {
+            // API text-to-image via configured providers (replaces MuAPI t2i).
+            return await localApi.generateImage(
+              selectedApiModelId,
+              { prompt: prompt.trim(), aspect_ratio: selectedAr, quality: (apiQualityOptions.includes(selectedQuality) ? selectedQuality : ((apiModel && apiModel.defaultQuality) || apiQualityOptions[0])) || undefined },
+              (evt) => setLocalProgress(evt),
+            );
+          }
+          throw new Error(
+            "No API provider configured — add one in Settings → API Providers, or switch to Local.",
+          );
         })
       );
 
@@ -1079,14 +1316,14 @@ export default function ImageStudio({
             id: res.id || Math.random().toString(36).substring(7),
             url: res.url,
             prompt: prompt.trim(),
-            model: selectedModelId,
+            model: useLocalModel ? selectedLocalModelId : (apiModels.length > 0 ? selectedApiModelId : selectedModelId),
             aspect_ratio: selectedAr,
             timestamp: new Date().toISOString(),
           };
           addToHistory(entry);
           onGenerationComplete?.({
             url: res.url,
-            model: selectedModelId,
+            model: useLocalModel ? selectedLocalModelId : (apiModels.length > 0 ? selectedApiModelId : selectedModelId),
             prompt: prompt.trim(),
             type: "image",
           });
@@ -1098,6 +1335,7 @@ export default function ImageStudio({
       setTimeout(() => setGenerateError(null), 4000);
     } finally {
       setGenerating(false);
+      setLocalProgress(null);
     }
   };
 
@@ -1245,46 +1483,57 @@ export default function ImageStudio({
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pt-2 border-t border-white/[0.03] relative">
             {/* Left controls */}
             <div className="flex items-center gap-2 relative flex-wrap pb-1 md:pb-0">
-              {/* Model button */}
+              {/* Local / API toggle */}
+              <button
+                type="button"
+                onClick={() => {
+                  setUseLocalModel((prev) => {
+                    const next = !prev;
+                    if (next && localModels[0])
+                      setSelectedLocalModelId(localModels[0].id);
+                    return next;
+                  });
+                }}
+                className={`text-xs px-2 py-1 rounded-lg border transition-colors ${
+                  useLocalModel
+                    ? "bg-primary text-black border-primary"
+                    : "bg-white/5 text-white/70 border-white/10"
+                }`}
+                title={
+                  useLocalModel
+                    ? "Using local models (offline)"
+                    : "Using API models"
+                }
+              >
+                {useLocalModel ? "Local" : "API"}
+              </button>
+
+              {/* Model selector — styled picker (local + API), Higgsfield-style */}
               <div className="relative">
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDropdownOpen((o) => (o === "model" ? null : "model"));
-                  }}
-                  className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
+                  onClick={(e) => { e.stopPropagation(); setDropdownOpen((o) => (o === "model" ? null : "model")); }}
+                  className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap max-w-[220px]"
                 >
-                  <div className="w-4 h-4 bg-[#22d3ee] rounded flex items-center justify-center">
-                    <span className="text-[9px] font-bold text-black uppercase">G</span>
-                  </div>
-                  <span className="text-xs font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
-                    {selectedModelName}
+                  <ModelIcon info={modelIcon(currentModel, useLocalModel)} size={16} />
+                  <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors truncate">
+                    {currentModelName}
                   </span>
-                  <svg
-                    width="10"
-                    height="10"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    className="opacity-50 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                  >
-                    <path d="M6 9l6 6 6-6" />
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="opacity-40 text-white shrink-0">
+                    <polyline points="6 9 12 15 18 9" />
                   </svg>
                 </button>
-
                 {dropdownOpen === "model" && (
-                  <div
-                    ref={dropdownRef}
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-lg p-3 shadow-2xl border border-white/[0.05] w-[calc(100vw-3rem)] max-w-xs"
-                  >
-                    <ModelDropdown
-                      models={currentModels}
-                      selectedModel={selectedModelId}
-                      onSelect={handleModelSelect}
+                  <div onClick={(e) => e.stopPropagation()} className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/10 min-w-[260px]">
+                    <ModelPickerPopover
+                      title={useLocalModel ? "Local models" : "API models"}
+                      emptyHint={useLocalModel ? "No local models — download in Settings" : "No API providers — add in Settings"}
+                      models={useLocalModel ? localModels : apiModels}
+                      selectedId={useLocalModel ? selectedLocalModelId : selectedApiModelId}
+                      onSelect={useLocalModel ? setSelectedLocalModelId : setSelectedApiModelId}
                       onClose={() => setDropdownOpen(null)}
+                      badgeFor={modelBadge}
+                      iconFor={(m) => modelIcon(m, useLocalModel)}
                     />
                   </div>
                 )}
@@ -1311,10 +1560,9 @@ export default function ImageStudio({
                 {dropdownOpen === "ar" && (
                   <div
                     onClick={(e) => e.stopPropagation()}
-                    className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 max-h-[40vh] overflow-y-auto custom-scrollbar shadow-2xl border border-white/10 min-w-[160px]"
+                    className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/10 min-w-[300px]"
                   >
-                    <SimpleDropdown
-                      title="Aspect Ratio"
+                    <AspectRatioPicker
                       options={currentAspectRatios}
                       selected={selectedAr}
                       onSelect={(val) => setSelectedAr(val)}
@@ -1323,6 +1571,38 @@ export default function ImageStudio({
                   </div>
                 )}
               </div>
+
+              {/* Local resolution button — lower res = faster + less RAM */}
+              {useLocalModel && currentModel && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setDropdownOpen((o) => (o === "localres" ? null : "localres")); }}
+                    className="flex items-center gap-2 px-3 py-2 bg-white/[0.03] hover:bg-white/[0.06] rounded-md transition-all border border-white/[0.03] group whitespace-nowrap"
+                    title="Output resolution — lower is faster and uses less memory"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-40 text-white">
+                      <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                    </svg>
+                    <span className="text-[11px] font-semibold text-white/70 group-hover:text-[#22d3ee] transition-colors">
+                      {selectedLocalResolution}px
+                    </span>
+                  </button>
+
+                  {dropdownOpen === "localres" && (
+                    <div onClick={(e) => e.stopPropagation()} className="absolute bottom-[calc(100%+12px)] left-0 z-50 bg-[#0a0a0a] rounded-md p-3 shadow-2xl border border-white/10 min-w-[220px]">
+                      <LocalResolutionPicker
+                        model={currentModel}
+                        ar={selectedAr}
+                        options={localResOptions(currentModel)}
+                        selected={selectedLocalResolution}
+                        onSelect={(val) => setSelectedLocalResolution(val)}
+                        onClose={() => setDropdownOpen(null)}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Quality/resolution button */}
               {showQualityBtn && (
@@ -1414,6 +1694,23 @@ export default function ImageStudio({
                 ))}
               </div>
             </div>
+
+            {/* Local / API generation progress hint */}
+            {localProgress?.totalSteps ? (
+              <span className="text-xs text-white/50 ml-2">
+                step {localProgress.step}/{localProgress.totalSteps}
+              </span>
+            ) : null}
+
+            {/* Estimated cost (API models) */}
+            {inApiMode && costEst != null && (
+              <span
+                className={`text-xs ml-2 whitespace-nowrap ${costEst === 0 ? "text-emerald-400" : "text-amber-300/80"}`}
+                title="Estimated provider charge for this generation (approx.)"
+              >
+                {costEst === 0 ? "Free" : `~$${costEst.toFixed(costEst < 0.1 ? 3 : 2)}${batchSize > 1 ? ` · ${batchSize}×` : ""}`}
+              </span>
+            )}
 
             {/* Generate button */}
             <button
