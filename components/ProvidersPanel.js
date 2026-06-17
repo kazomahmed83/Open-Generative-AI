@@ -14,13 +14,14 @@ export default function ProvidersPanel() {
   const [browse, setBrowse] = useState({ open: false, loading: false, items: [], freeOnly: true, q: '', error: null });
   const [showAdvanced, setShowAdvanced] = useState(false);
 
-  // validate recipe JSON on save: only block if non-empty AND unparseable
-  const validRecipe = (s) => { if (!s) return true; try { const o = JSON.parse(s); return o && o.path && o.resultPath && o.resultType; } catch { return false; } };
+  // validate recipe JSON on save: only block if non-empty AND missing required fields
+  const validRecipe = (s) => { if (!s) return true; try { const o = JSON.parse(s); return !!(o && o.kind && o.path && o.body && o.resultPath && o.resultType); } catch { return false; } };
 
   const openBrowse = async () => {
     setBrowse((b) => ({ ...b, open: true, loading: true, error: null, items: [] }));
     const provider = {
       baseUrl: form.baseUrl, apiKey: form.apiKey, modelsList: form.modelsList,
+      authStyle: form.authStyle, authHeader: form.authHeader, kind: form.kind,
     };
     const r = await fetch('/api/local-ai/providers/browse', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }),
@@ -52,7 +53,7 @@ export default function ProvidersPanel() {
   const save = async () => {
     setError(null);
     if (!form.name || !form.baseUrl) { setError("Name and Base URL are required."); return; }
-    if (!validRecipe(form.imageRecipe) || !validRecipe(form.chatRecipe)) { setError('Advanced recipe JSON is invalid (need path, resultPath, resultType).'); return; }
+    if (!validRecipe(form.imageRecipe) || !validRecipe(form.chatRecipe)) { setError('Advanced recipe JSON is invalid (need kind, path, body, resultPath, resultType).'); return; }
     setBusy(true);
     try {
       const provider = {
@@ -125,6 +126,7 @@ export default function ProvidersPanel() {
             setForm({
               ...BLANK,
               name: p.name,
+              kind: p.models.some((m) => m.kind === 'image') ? 'image' : 'chat',
               baseUrl: p.baseUrl,
               authStyle: p.authStyle || 'bearer',
               authHeader: p.authHeader || '',

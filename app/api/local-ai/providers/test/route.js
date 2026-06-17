@@ -11,7 +11,11 @@ export async function POST(req) {
     const { providerId, provider: draft, apiModelId, kind } = await req.json();
     const provider = providerId ? getProvider(providerId) : draft;
     if (!provider) return Response.json({ ok: false, error: 'provider not found' }, { status: 400 });
-    if (!provider.apiKey) return Response.json({ ok: false, error: 'no API key set' }, { status: 400 });
+    if (!/^https?:\/\//i.test(String(provider.baseUrl || ''))) {
+      return Response.json({ ok: false, error: 'baseUrl must be http(s)' }, { status: 400 });
+    }
+    // No hard apiKey precondition: keyless OpenAI-compatible local servers (LM Studio, vLLM)
+    // are supported. Let runRecipe attempt the call and surface the real upstream result.
     const recipe = resolveRecipe(provider, kind);
     const params = kind === 'image'
       ? { prompt: 'a small red circle on white', aspect_ratio: '1:1' }

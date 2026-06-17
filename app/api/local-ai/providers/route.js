@@ -15,6 +15,17 @@ export async function POST(req) {
   if (!/^https?:\/\//i.test(p.baseUrl)) {
     return Response.json({ error: 'baseUrl must be http(s)' }, { status: 400 });
   }
+  // Validate any supplied recipe JSON server-side (shape + required fields), so a
+  // non-UI caller cannot persist a malformed recipe that only fails at generate time.
+  const badRecipe = (s) => {
+    if (s == null || s === '') return false; // absent = inherit the default recipe
+    let o;
+    try { o = typeof s === 'string' ? JSON.parse(s) : s; } catch { return true; }
+    return !(o && o.kind && o.path && o.body && o.resultPath && o.resultType);
+  };
+  if (badRecipe(p.imageRecipe) || badRecipe(p.chatRecipe)) {
+    return Response.json({ error: 'invalid recipe JSON (need kind, path, body, resultPath, resultType)' }, { status: 400 });
+  }
   // Preserve existing key if the edit POST omits it.
   const existing = getProvider(p.id);
   const apiKey = p.apiKey && p.apiKey.length ? p.apiKey : (existing?.apiKey || '');

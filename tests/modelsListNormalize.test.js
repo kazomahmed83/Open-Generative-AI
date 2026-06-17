@@ -23,3 +23,8 @@ test('normalizeModelList degrades to ids with unknown free/kind', () => {
 test('normalizeModelList returns [] for a non-array items path', () => {
   assert.deepEqual(eng.normalizeModelList({}, { itemsPath: 'data', idField: 'id' }), []);
 });
+
+test('normalizeModelList honors ml.defaultKind for generic-basic catalogs', () => {
+  const out = eng.normalizeModelList({ data: [{ id: 'm1' }] }, { itemsPath: 'data', idField: 'id', defaultKind: 'image' });
+  assert.equal(out[0].kind, 'image');
+});

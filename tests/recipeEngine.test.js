@@ -150,3 +150,36 @@ test('runRecipe throws a helpful error on non-ok response', async () => {
     await assert.rejects(() => eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', {}), /401/);
   } finally { global.fetch = orig; }
 });
+
+test('substitute ignores __proto__/constructor keys (no prototype pollution)', () => {
+  const out = eng.substitute(JSON.parse('{"__proto__":{"polluted":"{{prompt}}"},"model":"{{model}}"}'), { prompt: 'p', model: 'm' });
+  assert.equal(out.model, 'm');
+  assert.equal(Object.getPrototypeOf(out), Object.prototype);
+});
+
+test('buildRequest falls back to provider authStyle/authHeader/headers when the recipe omits them', () => {
+  const recipe = { kind: 'chat', path: '/v1/chat/completions', body: { model: '{{model}}' }, resultPath: 'x', resultType: 'text' };
+  const req = eng.buildRequest(recipe, { baseUrl: 'https://x', apiKey: 'K', authStyle: 'header', authHeader: 'x-api-key', headers: { 'X-Org': 'o' } }, 'm', {});
+  assert.equal(req.headers['x-api-key'], 'K');
+  assert.equal(req.headers.Authorization, undefined);
+  assert.equal(req.headers['X-Org'], 'o');
+});
+
+test('runRecipe throws when a text resultPath does not match the response', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, json: async () => ({ unexpected: true }) });
+  try {
+    const recipe = { kind: 'chat', path: '/x', body: {}, resultPath: 'choices[0].message.content', resultType: 'text' };
+    await assert.rejects(() => eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', {}), /no text/);
+  } finally { global.fetch = orig; }
+});
+
+test('runRecipe binary derives ext from the response content-type', async () => {
+  const orig = global.fetch;
+  global.fetch = async () => ({ ok: true, headers: { get: () => 'image/webp' }, arrayBuffer: async () => Buffer.from('X') });
+  try {
+    const recipe = { kind: 'image', path: '/x', body: {}, resultPath: '@binary', resultType: 'binary' };
+    const out = await eng.runRecipe(recipe, { baseUrl: 'https://x', apiKey: 'k' }, 'm', {});
+    assert.equal(out.ext, 'webp');
+  } finally { global.fetch = orig; }
+});
