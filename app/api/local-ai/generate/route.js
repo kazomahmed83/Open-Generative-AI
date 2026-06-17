@@ -11,6 +11,17 @@ export async function POST(req) {
   let provider;
   try { provider = resolveProvider(model); } catch (e) { return Response.json({ error: e.message }, { status: 400 }); }
 
+  // Bridge client-disconnect to an AbortController so an abandoned generation kills its
+  // sd-cli child instead of orphaning it (a stuck 1024² run can squat on ~7 GB of RAM).
+  // Two triggers: the request's own signal, and the ReadableStream cancel() callback that
+  // the runtime fires when the SSE client goes away — the reliable hook for streamed responses.
+  const ac = new AbortController();
+  const abort = () => { try { ac.abort(); } catch {} };
+  if (req.signal) {
+    if (req.signal.aborted) abort();
+    else req.signal.addEventListener('abort', abort, { once: true });
+  }
+
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -24,7 +35,7 @@ export async function POST(req) {
         const { buffer, ext, seed } = await provider.generate(
           params,
           (evt) => send({ type: 'progress', ...evt }),
-          { signal: req.signal },
+          { signal: ac.signal },
         );
         const asset = saveAsset(buffer, ext);
         send({ type: 'result', url: asset.url, key: asset.key, seed, model });
@@ -36,6 +47,8 @@ export async function POST(req) {
         closed = true;
       }
     },
+    // Fired when the client disconnects mid-stream — abort so sd-cli is killed, not orphaned.
+    cancel() { abort(); },
   });
 
   return new Response(stream, {
