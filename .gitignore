@@ -37,6 +37,9 @@ out/
 # Test/verification artifacts (Playwright, screenshots)
 .playwright-mcp/
 *-verified.png
+# Loose verification screenshots at repo root
+/*.jpeg
+/model-library-*.png
 
 # Misc
 *.pem

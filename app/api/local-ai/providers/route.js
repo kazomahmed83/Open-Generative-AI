@@ -21,7 +21,11 @@ export async function POST(req) {
     if (s == null || s === '') return false; // absent = inherit the default recipe
     let o;
     try { o = typeof s === 'string' ? JSON.parse(s) : s; } catch { return true; }
-    return !(o && o.kind && o.path && o.body && o.resultPath && o.resultType);
+    if (!o || !o.kind || !o.path || !o.resultType) return true;
+    // GET recipes carry params in the URL (no body); binary results are the raw response (no resultPath).
+    if ((o.method || 'POST').toUpperCase() !== 'GET' && !o.body) return true;
+    if (o.resultType !== 'binary' && !o.resultPath) return true;
+    return false;
   };
   if (badRecipe(p.imageRecipe) || badRecipe(p.chatRecipe)) {
     return Response.json({ error: 'invalid recipe JSON (need kind, path, body, resultPath, resultType)' }, { status: 400 });

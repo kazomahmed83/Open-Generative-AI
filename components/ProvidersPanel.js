@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { PRESETS } from '../lib/local-runtime/providers/presets.js';
 
-const BLANK = { name: "", kind: "image", baseUrl: "", apiKey: "", modelsText: "", authStyle: "bearer", authHeader: "", headers: null, imageRecipe: "", chatRecipe: "", modelsList: null };
+const BLANK = { name: "", kind: "image", baseUrl: "", apiKey: "", modelsText: "", authStyle: "bearer", authHeader: "", headers: null, imageRecipe: "", chatRecipe: "", modelsList: null, modelMeta: {} };
 
 export default function ProvidersPanel() {
   const [providers, setProviders] = useState([]);
@@ -15,7 +15,7 @@ export default function ProvidersPanel() {
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // validate recipe JSON on save: only block if non-empty AND missing required fields
-  const validRecipe = (s) => { if (!s) return true; try { const o = JSON.parse(s); return !!(o && o.kind && o.path && o.body && o.resultPath && o.resultType); } catch { return false; } };
+  const validRecipe = (s) => { if (!s) return true; try { const o = JSON.parse(s); if (!o || !o.kind || !o.path || !o.resultType) return false; if ((o.method || 'POST').toUpperCase() !== 'GET' && !o.body) return false; if (o.resultType !== 'binary' && !o.resultPath) return false; return true; } catch { return false; } };
 
   const openBrowse = async () => {
     setBrowse((b) => ({ ...b, open: true, loading: true, error: null, items: [] }));
@@ -58,7 +58,7 @@ export default function ProvidersPanel() {
     try {
       const provider = {
         id: slug(form.name), name: form.name, kind: form.kind,
-        baseUrl: form.baseUrl, apiKey: form.apiKey, models: parseModels(form.modelsText),
+        baseUrl: form.baseUrl, apiKey: form.apiKey, models: parseModels(form.modelsText).map((m) => ({ ...m, ...((form.modelMeta && form.modelMeta[m.id]) || {}) })),
         authStyle: form.authStyle, authHeader: form.authHeader, headers: form.headers,
         imageRecipe: form.imageRecipe || undefined, chatRecipe: form.chatRecipe || undefined,
         modelsList: form.modelsList || undefined,
@@ -134,7 +134,7 @@ export default function ProvidersPanel() {
               imageRecipe: p.imageRecipe || '',
               chatRecipe: p.chatRecipe || '',
               modelsList: p.modelsList || null,
-              modelsText: p.models.map((m) => `${m.id}|${m.name}|${m.kind}`).join('\n'),
+              modelsText: p.models.map((m) => `${m.id}|${m.name}|${m.kind}`).join('\n'), modelMeta: Object.fromEntries(p.models.filter((m) => m.sizeMap || m.qualityOptions || m.bodyExtra || m.defaultQuality).map((m) => [m.id, { ...(m.sizeMap ? { sizeMap: m.sizeMap } : {}), ...(m.qualityOptions ? { qualityOptions: m.qualityOptions } : {}), ...(m.bodyExtra ? { bodyExtra: m.bodyExtra } : {}), ...(m.defaultQuality ? { defaultQuality: m.defaultQuality } : {}) }])),
             });
           }}
           className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none"
