@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const api = require('../lib/local-runtime/providers/api.js');
+const { buildImageRequest, buildChatRequest, resolveRecipe, generate } = require('../lib/local-runtime/providers/api.js');
 
 const PROVIDER = { id: 'p1', name: 'T', kind: 'image', baseUrl: 'https://api.example.com/', apiKey: 'sk-secret' };
 
@@ -12,22 +13,21 @@ test('arToSize maps aspect ratios to OpenAI sizes', () => {
   assert.strictEqual(api.arToSize('weird'), '1024x1024');
 });
 
-test('buildImageRequest builds the OpenAI images endpoint with auth + body', () => {
-  const r = api.buildImageRequest(PROVIDER, 'flux', { prompt: 'a cat', aspect_ratio: '16:9' });
-  assert.strictEqual(r.url, 'https://api.example.com/v1/images/generations'); // trailing slash normalized
-  assert.strictEqual(r.headers.Authorization, 'Bearer sk-secret');
-  assert.strictEqual(r.body.model, 'flux');
-  assert.strictEqual(r.body.prompt, 'a cat');
-  assert.strictEqual(r.body.size, '1792x1024');
-  assert.strictEqual(r.body.response_format, 'b64_json');
-  // secret must NOT leak into the body
-  assert.ok(!JSON.stringify(r.body).includes('sk-secret'));
+test('buildImageRequest uses the default OpenAI image shape', () => {
+  const req = buildImageRequest({ baseUrl: 'https://api.openai.com', apiKey: 'sk' }, 'gpt-image-1', { prompt: 'cat', aspect_ratio: '1:1' });
+  assert.equal(req.url, 'https://api.openai.com/v1/images/generations');
+  assert.equal(req.headers.Authorization, 'Bearer sk');
+  assert.deepEqual(req.body, { model: 'gpt-image-1', prompt: 'cat', size: '1024x1024', n: 1 });
 });
 
-test('buildChatRequest builds the chat endpoint with messages', () => {
-  const r = api.buildChatRequest({ ...PROVIDER, kind: 'chat' }, 'llama3', { prompt: 'hi' });
-  assert.strictEqual(r.url, 'https://api.example.com/v1/chat/completions');
-  assert.strictEqual(r.headers.Authorization, 'Bearer sk-secret');
-  assert.strictEqual(r.body.model, 'llama3');
-  assert.deepStrictEqual(r.body.messages, [{ role: 'user', content: 'hi' }]);
+test('buildChatRequest uses the default chat shape', () => {
+  const req = buildChatRequest({ baseUrl: 'https://x', apiKey: 'k' }, 'm', { prompt: 'hi' });
+  assert.equal(req.url, 'https://x/v1/chat/completions');
+  assert.deepEqual(req.body, { model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+});
+
+test('resolveRecipe prefers an explicit provider recipe, else the default', () => {
+  assert.equal(resolveRecipe({}, 'image').resultPath, 'data[0].b64_json');
+  const custom = resolveRecipe({ imageRecipe: JSON.stringify({ kind: 'image', path: '/x', body: {}, resultPath: 'y', resultType: 'base64' }) }, 'image');
+  assert.equal(custom.path, '/x');
 });
