@@ -1,14 +1,31 @@
-import { NextResponse } from 'next/server';
-import { downloadLocalModel } from '@/lib/local-ai-web';
+import { downloadRecipe, downloadLocalModel } from '@/lib/local-ai-web';
+import { getRecipe } from '@/lib/local-runtime/catalog/recipes.js';
 
 export async function POST(request) {
-  try {
-    const { modelId } = await request.json();
-    if (!modelId) {
-      return NextResponse.json({ error: 'Missing modelId' }, { status: 400 });
-    }
-    return NextResponse.json(await downloadLocalModel(modelId));
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const { modelId } = await request.json().catch(() => ({}));
+  if (!modelId) return new Response(JSON.stringify({ error: 'Missing modelId' }), { status: 400 });
+
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (obj) => controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+      try {
+        if (getRecipe(modelId)) {
+          await downloadRecipe(modelId, send);          // emits progress / needs-node / done
+        } else {
+          await downloadLocalModel(modelId);            // legacy sdcpp single-file
+          send({ type: 'done', state: 'ready' });
+        }
+      } catch (e) {
+        send({ type: 'error', error: e.message });
+      } finally {
+        send({ type: 'end' });
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' },
+  });
 }
