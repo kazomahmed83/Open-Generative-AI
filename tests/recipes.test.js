@@ -8,7 +8,7 @@ test('recipes: ids are unique and well-formed', () => {
   const ids = RECIPES.map((r) => r.id);
   assert.strictEqual(new Set(ids).size, ids.length, 'duplicate recipe id');
   for (const r of RECIPES) {
-    assert.ok(['image', 'chat', 'video', 'audio'].includes(r.category), `${r.id} bad category`);
+    assert.ok(['image', 'chat', 'code', 'video', 'audio'].includes(r.category), `${r.id} bad category`);
     assert.ok(['comfyui', 'ollama', 'sdcpp'].includes(r.engine), `${r.id} bad engine`);
     assert.ok(r.name && r.description, `${r.id} missing name/description`);
   }
