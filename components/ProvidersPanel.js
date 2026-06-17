@@ -1,14 +1,16 @@
 // components/ProvidersPanel.js
 "use client";
 import { useState, useEffect } from "react";
+import { PRESETS } from '../lib/local-runtime/providers/presets.js';
 
-const BLANK = { name: "", kind: "image", baseUrl: "", apiKey: "", modelsText: "" };
+const BLANK = { name: "", kind: "image", baseUrl: "", apiKey: "", modelsText: "", authStyle: "bearer", authHeader: "", headers: null, imageRecipe: "", chatRecipe: "", modelsList: null };
 
 export default function ProvidersPanel() {
   const [providers, setProviders] = useState([]);
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [testResult, setTestResult] = useState({});
 
   const load = () =>
     fetch("/api/local-ai/providers")
@@ -22,8 +24,8 @@ export default function ProvidersPanel() {
 
   const parseModels = (text) =>
     text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => {
-      const [id, ...rest] = l.split("|");
-      return { id: id.trim(), name: rest.join("|").trim() || id.trim() };
+      const [id, name, kind] = l.split("|").map((s) => s.trim());
+      return { id, name: name || id, ...(kind === "image" || kind === "chat" ? { kind } : {}) };
     }).filter((m) => m.id);
 
   const save = async () => {
@@ -34,6 +36,9 @@ export default function ProvidersPanel() {
       const provider = {
         id: slug(form.name), name: form.name, kind: form.kind,
         baseUrl: form.baseUrl, apiKey: form.apiKey, models: parseModels(form.modelsText),
+        authStyle: form.authStyle, authHeader: form.authHeader, headers: form.headers,
+        imageRecipe: form.imageRecipe || undefined, chatRecipe: form.chatRecipe || undefined,
+        modelsList: form.modelsList || undefined,
       };
       const res = await fetch("/api/local-ai/providers", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider }),
@@ -68,14 +73,51 @@ export default function ProvidersPanel() {
             <div className="min-w-0">
               <div className="text-white text-sm font-medium truncate">{p.name} <span className="text-white/40">· {p.kind}</span></div>
               <div className="text-white/40 text-xs truncate">{p.baseUrl} · {(p.models || []).length} models · {p.hasApiKey ? "key set" : "no key"}</div>
+              {testResult[p.id] && <div className="text-xs text-white/60 mt-0.5">{testResult[p.id]}</div>}
             </div>
-            <button onClick={() => remove(p.id)} disabled={busy} className="text-xs text-red-300 hover:text-red-200 px-2 py-1">Delete</button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={async () => {
+                  const m = (p.models || [])[0];
+                  const r = await fetch('/api/local-ai/providers/test', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ providerId: p.id, apiModelId: m?.id, kind: m?.kind || p.kind || 'chat' }),
+                  }).then((x) => x.json()).catch(() => ({ ok: false, error: 'network' }));
+                  setTestResult((t) => ({ ...t, [p.id]: r.ok ? '✅ works' : `❌ ${r.error || 'failed'}` }));
+                }}
+                className="text-xs text-cyan-300 hover:text-cyan-200 px-2 py-1"
+              >Test</button>
+              <button onClick={() => remove(p.id)} disabled={busy} className="text-xs text-red-300 hover:text-red-200 px-2 py-1">Delete</button>
+            </div>
           </div>
         ))}
       </div>
 
       <div className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-2">
         <div className="text-white/70 text-sm font-medium">Add / update a provider</div>
+        <select
+          value=""
+          onChange={(e) => {
+            const p = PRESETS.find((x) => x.id === e.target.value);
+            if (!p) return;
+            setForm({
+              ...BLANK,
+              name: p.name,
+              baseUrl: p.baseUrl,
+              authStyle: p.authStyle || 'bearer',
+              authHeader: p.authHeader || '',
+              headers: p.headers || null,
+              imageRecipe: p.imageRecipe || '',
+              chatRecipe: p.chatRecipe || '',
+              modelsList: p.modelsList || null,
+              modelsText: p.models.map((m) => `${m.id}|${m.name}|${m.kind}`).join('\n'),
+            });
+          }}
+          className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none"
+        >
+          <option value="">Start from a preset…</option>
+          {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name (e.g. Together)" className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none" />
         <select value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })} className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none">
           <option value="image">image</option>

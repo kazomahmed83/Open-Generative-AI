@@ -18,10 +18,15 @@ export async function POST(req) {
   // Preserve existing key if the edit POST omits it.
   const existing = getProvider(p.id);
   const apiKey = p.apiKey && p.apiKey.length ? p.apiKey : (existing?.apiKey || '');
-  upsertProvider({
+  const provider = {
     id: p.id, name: p.name, kind: p.kind, baseUrl: p.baseUrl, apiKey,
     models: Array.isArray(p.models) ? p.models : [],
-  });
+  };
+  // Forward optional recipe / auth fields when present.
+  for (const k of ['authStyle', 'authHeader', 'headers', 'imageRecipe', 'chatRecipe', 'modelsList']) {
+    if (p[k] != null) provider[k] = p[k];
+  }
+  upsertProvider(provider);
   return Response.json({ ok: true, providers: listProvidersSafe() });
 }
 
