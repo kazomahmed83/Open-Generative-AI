@@ -11,6 +11,23 @@ export default function ProvidersPanel() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [testResult, setTestResult] = useState({});
+  const [browse, setBrowse] = useState({ open: false, loading: false, items: [], freeOnly: true, q: '', error: null });
+
+  const openBrowse = async () => {
+    setBrowse((b) => ({ ...b, open: true, loading: true, error: null, items: [] }));
+    const provider = {
+      baseUrl: form.baseUrl, apiKey: form.apiKey, modelsList: form.modelsList,
+    };
+    const r = await fetch('/api/local-ai/providers/browse', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ provider }),
+    }).then((x) => x.json()).catch(() => ({ models: [], error: 'network' }));
+    setBrowse((b) => ({ ...b, loading: false, items: r.models || [], error: r.error || null }));
+  };
+
+  const addBrowsed = (m) => {
+    const line = `${m.id}|${m.name}|${m.kind}`;
+    setForm((f) => ({ ...f, modelsText: f.modelsText ? `${f.modelsText}\n${line}` : line }));
+  };
 
   const load = () =>
     fetch("/api/local-ai/providers")
@@ -126,6 +143,36 @@ export default function ProvidersPanel() {
         <input value={form.baseUrl} onChange={(e) => setForm({ ...form, baseUrl: e.target.value })} placeholder="Base URL (e.g. https://api.together.xyz)" className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none" />
         <input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="API key (blank keeps existing)" className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none" />
         <textarea value={form.modelsText} onChange={(e) => setForm({ ...form, modelsText: e.target.value })} placeholder={"Models, one per line:\nmodel-id|Display Name"} rows={3} className="w-full bg-black/30 text-white text-sm rounded px-2 py-1 border border-white/10 outline-none font-mono" />
+        {form.modelsList && (
+          <button onClick={openBrowse} disabled={!form.baseUrl} className="text-xs text-cyan-300 hover:text-cyan-200 px-2 py-1 border border-cyan-500/30 rounded">
+            Browse models
+          </button>
+        )}
+        {browse.open && (
+          <div className="border border-white/10 rounded-lg p-2 mt-2 bg-black/30">
+            <div className="flex items-center gap-2 mb-2">
+              <input value={browse.q} onChange={(e) => setBrowse((b) => ({ ...b, q: e.target.value }))} placeholder="Search models…" className="flex-1 bg-black/30 text-white text-xs rounded px-2 py-1 border border-white/10 outline-none" />
+              <label className="text-xs text-white/70 flex items-center gap-1">
+                <input type="checkbox" checked={browse.freeOnly} onChange={(e) => setBrowse((b) => ({ ...b, freeOnly: e.target.checked }))} /> Free only
+              </label>
+              <button onClick={() => setBrowse((b) => ({ ...b, open: false }))} className="text-xs text-white/50 px-2">Close</button>
+            </div>
+            {browse.loading && <div className="text-white/40 text-xs">Loading…</div>}
+            {browse.error && <div className="text-red-300 text-xs">{browse.error}</div>}
+            <div className="max-h-48 overflow-y-auto space-y-1">
+              {browse.items
+                .filter((m) => (!browse.freeOnly || m.free === 'free'))
+                .filter((m) => !browse.q || m.id.toLowerCase().includes(browse.q.toLowerCase()) || (m.name || '').toLowerCase().includes(browse.q.toLowerCase()))
+                .slice(0, 200)
+                .map((m) => (
+                  <div key={m.id} className="flex items-center justify-between text-xs text-white/80 px-2 py-1 hover:bg-white/5 rounded">
+                    <span className="truncate">{m.name} <span className="text-white/40">· {m.kind}{m.free === 'free' ? ' · free' : ''}</span></span>
+                    <button onClick={() => addBrowsed(m)} className="text-cyan-300 hover:text-cyan-200 px-2">Add</button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
         {error && <div className="text-red-300 text-xs">{error}</div>}
         <button onClick={save} disabled={busy} className="bg-cyan-500 text-black text-sm font-medium rounded px-3 py-1 disabled:opacity-50">{busy ? "Saving…" : "Save provider"}</button>
       </div>
