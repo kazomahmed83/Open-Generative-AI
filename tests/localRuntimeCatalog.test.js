@@ -44,3 +44,13 @@ test('listCatalog merges configured API provider models (secret-free, source=api
     else process.env.OPEN_GENERATIVE_AI_LOCAL_AI_DIR = prev;
   }
 });
+
+test('normalizeApiModel uses per-model kind, falling back to provider kind', () => {
+  const { normalizeApiModel } = require('../lib/local-runtime/catalog.js');
+  const provider = { id: 'p1', name: 'P1', kind: 'chat' };
+  const imageModel = normalizeApiModel(provider, { id: 'img', name: 'Img', kind: 'image' });
+  const inherit = normalizeApiModel(provider, { id: 'c', name: 'C' });
+  assert.equal(imageModel.kind, 'image');
+  assert.equal(imageModel.id, 'api:p1:img');
+  assert.equal(inherit.kind, 'chat');
+});
