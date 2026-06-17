@@ -12,6 +12,10 @@ export default function ProvidersPanel() {
   const [error, setError] = useState(null);
   const [testResult, setTestResult] = useState({});
   const [browse, setBrowse] = useState({ open: false, loading: false, items: [], freeOnly: true, q: '', error: null });
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // validate recipe JSON on save: only block if non-empty AND unparseable
+  const validRecipe = (s) => { if (!s) return true; try { const o = JSON.parse(s); return o && o.path && o.resultPath && o.resultType; } catch { return false; } };
 
   const openBrowse = async () => {
     setBrowse((b) => ({ ...b, open: true, loading: true, error: null, items: [] }));
@@ -48,6 +52,7 @@ export default function ProvidersPanel() {
   const save = async () => {
     setError(null);
     if (!form.name || !form.baseUrl) { setError("Name and Base URL are required."); return; }
+    if (!validRecipe(form.imageRecipe) || !validRecipe(form.chatRecipe)) { setError('Advanced recipe JSON is invalid (need path, resultPath, resultType).'); return; }
     setBusy(true);
     try {
       const provider = {
@@ -171,6 +176,22 @@ export default function ProvidersPanel() {
                   </div>
                 ))}
             </div>
+          </div>
+        )}
+        <button onClick={() => setShowAdvanced((v) => !v)} className="text-xs text-white/50 hover:text-white/80">
+          {showAdvanced ? '▾ Advanced (recipe JSON)' : '▸ Advanced (recipe JSON)'}
+        </button>
+        {showAdvanced && (
+          <div className="space-y-2 border border-white/10 rounded p-2 bg-black/20">
+            <div className="flex items-center gap-2">
+              <select value="" onChange={(e) => { const p = PRESETS.find((x) => x.id === e.target.value); if (!p) return; setForm((f) => ({ ...f, imageRecipe: p.imageRecipe || '', chatRecipe: p.chatRecipe || '', authStyle: p.authStyle || 'bearer', authHeader: p.authHeader || '', modelsList: p.modelsList || null })); }} className="bg-black/30 text-white text-xs rounded px-2 py-1 border border-white/10">
+                <option value="">Start from a preset…</option>
+                {PRESETS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <span className="text-white/40 text-[11px]">clones its recipe JSON to edit</span>
+            </div>
+            <textarea value={form.imageRecipe} onChange={(e) => setForm({ ...form, imageRecipe: e.target.value })} placeholder="image recipe JSON (optional)" rows={4} className="w-full bg-black/30 text-white text-xs rounded px-2 py-1 border border-white/10 outline-none font-mono" />
+            <textarea value={form.chatRecipe} onChange={(e) => setForm({ ...form, chatRecipe: e.target.value })} placeholder="chat recipe JSON (optional)" rows={4} className="w-full bg-black/30 text-white text-xs rounded px-2 py-1 border border-white/10 outline-none font-mono" />
           </div>
         )}
         {error && <div className="text-red-300 text-xs">{error}</div>}
