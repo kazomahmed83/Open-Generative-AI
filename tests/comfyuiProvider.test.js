@@ -14,8 +14,13 @@ test('buildFlux2Workflow: GGUF unet + mistral clip + flux2 vae graph', () => {
   assert.ok(types.includes('UnetLoaderGGUF'), 'uses GGUF unet loader');
   assert.ok(types.includes('CLIPLoader'), 'uses CLIPLoader for mistral');
   assert.ok(types.includes('VAELoader'), 'loads flux2 vae');
+  assert.ok(types.includes('EmptySD3LatentImage'), 'uses 16-channel SD3 latent (not 4-ch EmptyLatentImage)');
+  assert.ok(types.includes('FluxGuidance'), 'routes positive conditioning through FluxGuidance');
   assert.ok(types.includes('VAEDecode') && types.includes('SaveImage'), 'decodes + saves');
   assert.ok(JSON.stringify(wf).includes('flux-2-klein-base-9b-Q4_K_M.gguf'), 'gguf unet wired');
+  // KSampler must run at cfg 1 (FLUX guidance lives in the conditioning)
+  const ksampler = Object.values(wf).find((n) => n.class_type === 'KSampler');
+  assert.strictEqual(ksampler.inputs.cfg, 1);
 });
 
 test('buildWorkflow produces a valid txt2img graph with prompt/size/seed wired', () => {
